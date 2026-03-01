@@ -104,6 +104,8 @@ interface NotepadWindowProps {
   allNotes: Note[]
   canvasOffset: { x: number; y: number }
   autoFocus?: boolean
+  isFocused?: boolean
+  isFocusMode?: boolean
 }
 
 function ToolbarButton({
@@ -147,6 +149,8 @@ export default function NotepadWindow({
   allNotes,
   canvasOffset,
   autoFocus = false,
+  isFocused = false,
+  isFocusMode = false,
 }: NotepadWindowProps) {
   const windowRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
@@ -510,9 +514,9 @@ export default function NotepadWindow({
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
-            className={`flex shrink-0 items-center gap-2 border-b border-note-border bg-note-titlebar/60 px-3 py-2 ${
-              isMaximized ? '' : 'cursor-default'
-            }`}
+            className={`flex shrink-0 items-center gap-2 border-b border-note-border px-3 py-2 ${
+              isFocused ? 'bg-note-titlebar/90' : 'bg-note-titlebar/60'
+            } ${isMaximized ? '' : 'cursor-default'}`}
             style={{ position: 'relative', zIndex: 20 }}
             onMouseDown={isOverview ? undefined : handleMouseDownDrag}
             onDoubleClick={handleTitleBarDoubleClick}
@@ -579,7 +583,7 @@ export default function NotepadWindow({
             ) : (
               <div className="min-w-0 flex-1 overflow-hidden text-center">
                 <span
-                  className="select-none text-xs font-medium text-note-foreground/70"
+                  className={`select-none text-xs ${isFocused ? 'font-semibold text-note-foreground' : 'font-medium text-note-foreground/70'}`}
                   onDoubleClick={(e) => { if (!isOverview) { e.stopPropagation(); startRename() } }}
                 >
                   {note.title || 'Untitled'}
@@ -684,6 +688,15 @@ export default function NotepadWindow({
             </div>
           )}
         </>
+      )}
+
+      {/* Focus mode overlay — dims non-focused notes; clicking switches focus */}
+      {isFocusMode && !isFocused && (
+        <div
+          className="absolute inset-0 cursor-pointer rounded-lg bg-black/60"
+          style={{ zIndex: 50 }}
+          onClick={(e) => { e.stopPropagation(); onFocus(note.id) }}
+        />
       )}
 
       {/* Resize Handles — all 8 directions.

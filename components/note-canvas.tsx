@@ -23,6 +23,10 @@ export default function NoteCanvas({ userId }: { userId: string }) {
   const scaleRef = useRef(scale)
   scaleRef.current = scale
   const [latestNoteId, setLatestNoteId] = useState<string | null>(null)
+  const [focusedNoteId, setFocusedNoteId] = useState<string | null>(null)
+  const [isFocusMode, setIsFocusMode] = useState(false)
+  const focusedNoteIdRef = useRef<string | null>(null)
+  focusedNoteIdRef.current = focusedNoteId
   const isPanning = useRef(false)
   const panStart = useRef({ x: 0, y: 0 })
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -85,6 +89,8 @@ export default function NoteCanvas({ userId }: { userId: string }) {
     () => workspaces.find((w) => w.id === activeWorkspaceId)?.notes ?? [],
     [workspaces, activeWorkspaceId]
   )
+  const notesRef = useRef(notes)
+  notesRef.current = notes
 
   const setNotes = useCallback(
     (updater: Note[] | ((prev: Note[]) => Note[])) => {
@@ -158,6 +164,7 @@ export default function NoteCanvas({ userId }: { userId: string }) {
       setNotes((prev) =>
         prev.map((n) => (n.id === noteId ? { ...n, zIndex: getNextZIndex() } : n))
       )
+      setFocusedNoteId(noteId)
     },
     [setNotes]
   )
@@ -192,8 +199,18 @@ export default function NoteCanvas({ userId }: { userId: string }) {
     setLatestNoteId(null)
   }, [])
 
+  const toggleFocusMode = useCallback(() => {
+    setIsFocusMode((prev) => {
+      if (!prev && !focusedNoteIdRef.current && notesRef.current.length > 0) {
+        focusNote(notesRef.current[0].id)
+      }
+      return !prev
+    })
+  }, [focusNote])
+
   // ── Viewport animation ───────────────────────────────────────────────────
 
+  const animateToViewRef = useRef<(s: number, o: { x: number; y: number }, d?: number) => void>(() => {})
   const animateToView = useCallback(
     (targetScale: number, targetOffset: { x: number; y: number }, duration = 400) => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
@@ -220,6 +237,7 @@ export default function NoteCanvas({ userId }: { userId: string }) {
     },
     [scale, offset]
   )
+  animateToViewRef.current = animateToView
 
   const zoomToNote = useCallback(
     (noteId: string) => {
@@ -273,6 +291,49 @@ export default function NoteCanvas({ userId }: { userId: string }) {
       y: (vh + 96) / 2 - centerY * newScale,
     })
   }, [notes, zoomReset, animateToView])
+
+  // ── Focus mode ───────────────────────────────────────────────────────────
+
+  const FOCUS_SCALE = 1.2
+
+  // Zoom to the focused note whenever it changes while focus mode is active,
+  // or when focus mode is turned on.
+  useEffect(() => {
+    if (!isFocusMode || !focusedNoteId) return
+    const note = notesRef.current.find((n) => n.id === focusedNoteId)
+    if (!note) return
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const cx = note.x + note.width / 2
+    const cy = note.y + note.height / 2
+    animateToViewRef.current(FOCUS_SCALE, {
+      x: vw / 2 - cx * FOCUS_SCALE,
+      y: vh / 2 - cy * FOCUS_SCALE,
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusedNoteId, isFocusMode])
+
+  // TAB / Shift-TAB cycles through notes in focus mode.
+  useEffect(() => {
+    if (!isFocusMode) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+      if ((e.target as HTMLElement).closest('[contenteditable="true"]')) return
+      e.preventDefault()
+      setNotes((prev) => {
+        const sorted = [...prev].sort((a, b) => a.x - b.x || a.y - b.y)
+        const currentIdx = sorted.findIndex((n) => n.id === focusedNoteIdRef.current)
+        const dir = e.shiftKey ? -1 : 1
+        const idx = ((currentIdx === -1 ? 0 : currentIdx) + dir + sorted.length) % sorted.length
+        const next = sorted[idx]
+        if (next) setFocusedNoteId(next.id)
+        return next ? prev.map((n) => (n.id === next.id ? { ...n, zIndex: getNextZIndex() } : n)) : prev
+      })
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFocusMode, setNotes])
 
   // ── Mouse wheel zoom ─────────────────────────────────────────────────────
 
@@ -391,6 +452,8 @@ export default function NoteCanvas({ userId }: { userId: string }) {
               allNotes={notes}
               canvasOffset={offset}
               autoFocus={note.id === latestNoteId}
+              isFocused={note.id === focusedNoteId}
+              isFocusMode={isFocusMode}
             />
           ))}
         </div>
@@ -421,6 +484,8 @@ export default function NoteCanvas({ userId }: { userId: string }) {
         onRenameWorkspace={renameWorkspace}
         onDeleteWorkspace={deleteWorkspace}
         onSignOut={() => db.auth.signOut()}
+        isFocusMode={isFocusMode}
+        onToggleFocusMode={toggleFocusMode}
       />
     </div>
   )

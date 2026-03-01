@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Maximize, RotateCcw, ZoomIn, ZoomOut, FileText, LogOut, Check, X } from 'lucide-react'
+import { Plus, Maximize, RotateCcw, ZoomIn, ZoomOut, FileText, LogOut, Check, X, Crosshair } from 'lucide-react'
 import { type Workspace } from '@/lib/notes-store'
 import {
   ContextMenu,
@@ -26,6 +26,8 @@ interface CanvasControlsProps {
   onRenameWorkspace: (id: string, name: string) => void
   onDeleteWorkspace: (id: string) => void
   onSignOut: () => void
+  isFocusMode: boolean
+  onToggleFocusMode: () => void
 }
 
 function WorkspaceTab({
@@ -156,6 +158,8 @@ export default function CanvasControls({
   onRenameWorkspace,
   onDeleteWorkspace,
   onSignOut,
+  isFocusMode,
+  onToggleFocusMode,
 }: CanvasControlsProps) {
   return (
     <>
@@ -197,14 +201,26 @@ export default function CanvasControls({
             </button>
           </div>
 
-          {/* Right: New Note + Sign Out */}
+          {/* Right: Focus Mode + New Note + Sign Out */}
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={onAddNote}
-              className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-md shadow-primary/20 transition-all hover:shadow-lg hover:shadow-primary/30 hover:brightness-110 active:scale-[0.97]"
+              onClick={onToggleFocusMode}
+              className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors select-none ${
+                isFocusMode
+                  ? 'bg-primary/15 text-primary'
+                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+              }`}
             >
-              <Plus size={16} />
+              <Crosshair size={13} />
+              <span>Focus</span>
+            </button>
+            <button
+              type="button"
+              onClick={onAddNote}
+              className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-all hover:brightness-110 active:scale-[0.97]"
+            >
+              <Plus size={13} />
               <span>New Note</span>
             </button>
             <button
