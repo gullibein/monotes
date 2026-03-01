@@ -26,27 +26,63 @@ function snapToGrid(
 
   const vw = window.innerWidth
   const vh = window.innerHeight
-  // Viewport edges in canvas coordinates (account for ~57px fixed header)
-  const xTargets = [-offset.x / scale, (vw - offset.x) / scale - noteW]
-  const yTargets = [(57 - offset.y) / scale, (vh - offset.y) / scale - noteH]
+  // Viewport edges (always snap to these)
+  const xViewport = [-offset.x / scale, (vw - offset.x) / scale - noteW]
+  const yViewport = [(57 - offset.y) / scale, (vh - offset.y) / scale - noteH]
+
+  for (const tx of xViewport) {
+    const d = Math.abs(rawX - tx)
+    if (d < minDx) { minDx = d; x = tx }
+  }
+  for (const ty of yViewport) {
+    const d = Math.abs(rawY - ty)
+    if (d < minDy) { minDy = d; y = ty }
+  }
 
   for (const other of allNotes) {
     if (other.id === noteId) continue
     const ow = other.width, oh = other.height
-    xTargets.push(other.x, other.x + ow, other.x - noteW, other.x + ow - noteW)
-    yTargets.push(other.y, other.y + oh, other.y - noteH, other.y + oh - noteH)
+
+    // Is the dragged note near an X edge of this note (side-adjacent in X)?
+    const nearXEdge =
+      Math.abs(rawX - (other.x - noteW)) < threshold ||
+      Math.abs(rawX - (other.x + ow)) < threshold
+
+    // Is the dragged note near a Y edge of this note (side-adjacent in Y)?
+    const nearYEdge =
+      Math.abs(rawY - (other.y - noteH)) < threshold ||
+      Math.abs(rawY - (other.y + oh)) < threshold
+
+    // Edge snaps (touching a side) are always available
+    // Alignment snaps (same row/column) only apply when also near the perpendicular edge
+    const xSnaps = [other.x - noteW, other.x + ow]
+    if (nearYEdge) xSnaps.push(other.x, other.x + ow - noteW)
+
+    const ySnaps = [other.y - noteH, other.y + oh]
+    if (nearXEdge) ySnaps.push(other.y, other.y + oh - noteH)
+
+    for (const tx of xSnaps) {
+      const d = Math.abs(rawX - tx)
+      if (d < minDx) { minDx = d; x = tx }
+    }
+    for (const ty of ySnaps) {
+      const d = Math.abs(rawY - ty)
+      if (d < minDy) { minDy = d; y = ty }
+    }
   }
 
-  for (const tx of xTargets) {
-    const d = Math.abs(rawX - tx)
-    if (d < minDx) { minDx = d; x = tx }
-  }
-  for (const ty of yTargets) {
-    const d = Math.abs(rawY - ty)
-    if (d < minDy) { minDy = d; y = ty }
-  }
   return { x, y }
 }
+type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
+
+interface ResizePartner {
+  id: string
+  origX: number
+  origY: number
+  origWidth: number
+  origHeight: number
+}
+
 import {
   ContextMenu,
   ContextMenuContent,
@@ -122,7 +158,17 @@ export default function NotepadWindow({
   canvasOffsetRef.current = canvasOffset
   const isResizing = useRef(false)
   const dragStart = useRef({ x: 0, y: 0 })
-  const resizeStart = useRef({ width: 0, height: 0, clientX: 0, clientY: 0 })
+  const resizeStart = useRef<{
+    noteX: number; noteY: number; width: number; height: number
+    clientX: number; clientY: number
+    direction: ResizeDirection
+    eastPartners: ResizePartner[]; westPartners: ResizePartner[]
+    southPartners: ResizePartner[]; northPartners: ResizePartner[]
+  }>({
+    noteX: 0, noteY: 0, width: 0, height: 0,
+    clientX: 0, clientY: 0, direction: 'se',
+    eastPartners: [], westPartners: [], southPartners: [], northPartners: [],
+  })
   const [isMaximized, setIsMaximized] = useState(false)
   const [isMinimized, setIsMinimized] = useState(false)
   const [preMaxState, setPreMaxState] = useState({ x: 0, y: 0, width: 0, height: 0 })
@@ -251,20 +297,27 @@ export default function NotepadWindow({
   )
 
   const handleMouseDownResize = useCallback(
-    (e: React.MouseEvent) => {
+    (e: React.MouseEvent, direction: ResizeDirection) => {
       if (isMaximized) return
       e.preventDefault()
       e.stopPropagation()
+      const SNAP_TOL = 4
+      const makePartners = (pred: (o: Note) => boolean): ResizePartner[] =>
+        allNotesRef.current
+          .filter((o) => o.id !== note.id && pred(o))
+          .map((o) => ({ id: o.id, origX: o.x, origY: o.y, origWidth: o.width, origHeight: o.height }))
       isResizing.current = true
       resizeStart.current = {
-        width: note.width,
-        height: note.height,
-        clientX: e.clientX,
-        clientY: e.clientY,
+        noteX: note.x, noteY: note.y, width: note.width, height: note.height,
+        clientX: e.clientX, clientY: e.clientY, direction,
+        eastPartners:  makePartners((o) => Math.abs(o.x - (note.x + note.width)) < SNAP_TOL),
+        westPartners:  makePartners((o) => Math.abs((o.x + o.width) - note.x) < SNAP_TOL),
+        southPartners: makePartners((o) => Math.abs(o.y - (note.y + note.height)) < SNAP_TOL),
+        northPartners: makePartners((o) => Math.abs((o.y + o.height) - note.y) < SNAP_TOL),
       }
       onFocus(note.id)
     },
-    [note.id, note.width, note.height, onFocus, isMaximized]
+    [note.id, note.x, note.y, note.width, note.height, onFocus, isMaximized]
   )
 
   useEffect(() => {
@@ -280,11 +333,52 @@ export default function NotepadWindow({
         onUpdate(note.id, { x: newX, y: newY })
       }
       if (isResizing.current) {
-        const dx = (e.clientX - resizeStart.current.clientX) / scale
-        const dy = (e.clientY - resizeStart.current.clientY) / scale
-        const newWidth = Math.max(280, resizeStart.current.width + dx)
-        const newHeight = Math.max(200, resizeStart.current.height + dy)
-        onUpdate(note.id, { width: newWidth, height: newHeight })
+        const { noteX: ox, noteY: oy, width: ow, height: oh, direction: dir,
+                eastPartners, westPartners, southPartners, northPartners } = resizeStart.current
+        let dx = (e.clientX - resizeStart.current.clientX) / scale
+        let dy = (e.clientY - resizeStart.current.clientY) / scale
+        const MIN_W = 280, MIN_H = 200
+        // Clamp deltas so partners cannot be squeezed below their minimum size.
+        // This makes the shared edge behave as a single edge — both notes stop together.
+        if (dir.includes('e') && dx > 0 && eastPartners.length > 0)
+          dx = Math.min(dx, Math.min(...eastPartners.map((p) => p.origWidth - MIN_W)))
+        if (dir.includes('w') && dx < 0 && westPartners.length > 0)
+          dx = Math.max(dx, -Math.min(...westPartners.map((p) => p.origWidth - MIN_W)))
+        if (dir.includes('s') && dy > 0 && southPartners.length > 0)
+          dy = Math.min(dy, Math.min(...southPartners.map((p) => p.origHeight - MIN_H)))
+        if (dir.includes('n') && dy < 0 && northPartners.length > 0)
+          dy = Math.max(dy, -Math.min(...northPartners.map((p) => p.origHeight - MIN_H)))
+        let newX = ox, newY = oy, newW = ow, newH = oh
+        if (dir.includes('e')) newW = Math.max(MIN_W, ow + dx)
+        if (dir.includes('s')) newH = Math.max(MIN_H, oh + dy)
+        if (dir.includes('w')) { const d = Math.min(dx, ow - MIN_W); newX = ox + d; newW = ow - d }
+        if (dir.includes('n')) { const d = Math.min(dy, oh - MIN_H); newY = oy + d; newH = oh - d }
+        onUpdate(note.id, { x: newX, y: newY, width: newW, height: newH })
+        // Coupled resize: snapped partners share the moved edge
+        if (dir.includes('e')) {
+          const sharedX = ox + newW
+          for (const p of eastPartners) {
+            const newPW = Math.max(MIN_W, p.origX + p.origWidth - sharedX)
+            onUpdate(p.id, { x: p.origX + p.origWidth - newPW, width: newPW })
+          }
+        }
+        if (dir.includes('w')) {
+          for (const p of westPartners) {
+            onUpdate(p.id, { width: Math.max(MIN_W, newX - p.origX) })
+          }
+        }
+        if (dir.includes('s')) {
+          const sharedY = oy + newH
+          for (const p of southPartners) {
+            const newPH = Math.max(MIN_H, p.origY + p.origHeight - sharedY)
+            onUpdate(p.id, { y: p.origY + p.origHeight - newPH, height: newPH })
+          }
+        }
+        if (dir.includes('n')) {
+          for (const p of northPartners) {
+            onUpdate(p.id, { height: Math.max(MIN_H, newY - p.origY) })
+          }
+        }
       }
     }
     const handleMouseUp = () => {
@@ -592,18 +686,39 @@ export default function NotepadWindow({
         </>
       )}
 
-      {/* Resize Handle */}
+      {/* Resize Handles — all 8 directions.
+          Handles extend 1px outside the padding box (into the border) so the
+          border pixel between two snapped notes is covered by both handles,
+          eliminating the grab-cursor gap at the shared edge. */}
       {!isMaximized && !isOverview && !isMinimized && (
-        <div
-          className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize"
-          onMouseDown={handleMouseDownResize}
-          aria-label="Resize note"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" className="text-note-foreground/20">
-            <path d="M14 14L8 14L14 8Z" fill="currentColor" />
-            <path d="M14 14L11 14L14 11Z" fill="currentColor" opacity="0.5" />
-          </svg>
-        </div>
+        <>
+          {/* Edges */}
+          <div className="absolute left-3 right-3 h-1 cursor-ns-resize"
+            style={{ top: '-1px', zIndex: 30 }}
+            onMouseDown={(e) => handleMouseDownResize(e, 'n')} />
+          <div className="absolute left-3 right-3 h-1 cursor-ns-resize"
+            style={{ bottom: '-1px', zIndex: 30 }}
+            onMouseDown={(e) => handleMouseDownResize(e, 's')} />
+          <div className="absolute top-3 bottom-3 w-1 cursor-ew-resize"
+            style={{ left: '-1px', zIndex: 30 }}
+            onMouseDown={(e) => handleMouseDownResize(e, 'w')} />
+          <div className="absolute top-3 bottom-3 w-1 cursor-ew-resize"
+            style={{ right: '-1px', zIndex: 30 }}
+            onMouseDown={(e) => handleMouseDownResize(e, 'e')} />
+          {/* Corners */}
+          <div className="absolute h-3 w-3 cursor-nwse-resize"
+            style={{ top: '-1px', left: '-1px', zIndex: 40 }}
+            onMouseDown={(e) => handleMouseDownResize(e, 'nw')} />
+          <div className="absolute h-3 w-3 cursor-nesw-resize"
+            style={{ top: '-1px', right: '-1px', zIndex: 40 }}
+            onMouseDown={(e) => handleMouseDownResize(e, 'ne')} />
+          <div className="absolute h-3 w-3 cursor-nesw-resize"
+            style={{ bottom: '-1px', left: '-1px', zIndex: 40 }}
+            onMouseDown={(e) => handleMouseDownResize(e, 'sw')} />
+          <div className="absolute h-3 w-3 cursor-nwse-resize"
+            style={{ bottom: '-1px', right: '-1px', zIndex: 40 }}
+            onMouseDown={(e) => handleMouseDownResize(e, 'se')} />
+        </>
       )}
     </div>
   )

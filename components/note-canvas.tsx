@@ -20,6 +20,8 @@ export default function NoteCanvas({ userId }: { userId: string }) {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState('ws-1')
   const [scale, setScale] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const scaleRef = useRef(scale)
+  scaleRef.current = scale
   const [latestNoteId, setLatestNoteId] = useState<string | null>(null)
   const isPanning = useRef(false)
   const panStart = useRef({ x: 0, y: 0 })
@@ -285,14 +287,18 @@ export default function NoteCanvas({ userId }: { userId: string }) {
       const mouseX = e.clientX - rect.left
       const mouseY = e.clientY - rect.top
       const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP
-      const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale + delta))
-      const scaleRatio = newScale / scale
+      const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scaleRef.current + delta))
+      const scaleRatio = newScale / scaleRef.current
       setScale(newScale)
-      setOffset({ x: mouseX - (mouseX - offset.x) * scaleRatio, y: mouseY - (mouseY - offset.y) * scaleRatio })
+      setOffset((prev) => ({ x: mouseX - (mouseX - prev.x) * scaleRatio, y: mouseY - (mouseY - prev.y) * scaleRatio }))
     }
     el.addEventListener('wheel', handleWheel, { passive: false })
     return () => el.removeEventListener('wheel', handleWheel)
-  }, [scale, offset])
+  // Re-run when dbLoading changes: the canvas div doesn't exist while loading,
+  // so this is the trigger that attaches the listener once the canvas mounts.
+  // scaleRef + functional setOffset keep the handler fresh without needing scale/offset as deps.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dbLoading])
 
   // ── Canvas panning ───────────────────────────────────────────────────────
 
