@@ -7,7 +7,7 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'MoNotes - Freeform Note Taking',
+  title: 'FloNotes - Freeform Note Taking',
   description: 'A freeform canvas for creating and managing multiple notepad windows with zoom and pan controls',
   generator: 'v0.app',
   icons: {

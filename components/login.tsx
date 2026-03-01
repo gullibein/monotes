@@ -46,7 +46,7 @@ export default function Login() {
             <FileText size={22} className="text-primary-foreground" />
           </div>
           <div className="text-center">
-            <h1 className="text-xl font-semibold text-foreground">MoNotes</h1>
+            <h1 className="text-xl font-semibold text-foreground">FloNotes</h1>
             <p className="text-sm text-muted-foreground">Sign in to access your notes</p>
           </div>
         </div>

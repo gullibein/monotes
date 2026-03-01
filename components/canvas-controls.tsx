@@ -168,7 +168,7 @@ export default function CanvasControls({
               <FileText size={16} className="text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-sm font-semibold leading-tight text-foreground">MoNotes</h1>
+              <h1 className="text-sm font-semibold leading-tight text-foreground">FloNotes</h1>
               <p className="text-[10px] text-muted-foreground">
                 {noteCount} {noteCount === 1 ? 'note' : 'notes'}
               </p>
