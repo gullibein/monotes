@@ -1,0 +1,610 @@
+'use client'
+
+import { useCallback, useRef, useState, useEffect } from 'react'
+import {
+  Bold,
+  Italic,
+  Underline,
+  X,
+  Check,
+  Minus,
+  Maximize2,
+  type LucideIcon,
+} from 'lucide-react'
+import { type Note, getNextZIndex, NOTE_COLORS } from '@/lib/notes-store'
+
+const SNAP_PX = 12 // screen-pixel snap radius
+
+function snapToGrid(
+  rawX: number, rawY: number,
+  noteId: string, noteW: number, noteH: number,
+  allNotes: Note[], scale: number, offset: { x: number; y: number }
+): { x: number; y: number } {
+  const threshold = SNAP_PX / scale
+  let x = rawX, y = rawY
+  let minDx = threshold + 1, minDy = threshold + 1
+
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  // Viewport edges in canvas coordinates (account for ~57px fixed header)
+  const xTargets = [-offset.x / scale, (vw - offset.x) / scale - noteW]
+  const yTargets = [(57 - offset.y) / scale, (vh - offset.y) / scale - noteH]
+
+  for (const other of allNotes) {
+    if (other.id === noteId) continue
+    const ow = other.width, oh = other.height
+    xTargets.push(other.x, other.x + ow, other.x - noteW, other.x + ow - noteW)
+    yTargets.push(other.y, other.y + oh, other.y - noteH, other.y + oh - noteH)
+  }
+
+  for (const tx of xTargets) {
+    const d = Math.abs(rawX - tx)
+    if (d < minDx) { minDx = d; x = tx }
+  }
+  for (const ty of yTargets) {
+    const d = Math.abs(rawY - ty)
+    if (d < minDy) { minDy = d; y = ty }
+  }
+  return { x, y }
+}
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
+
+const OVERVIEW_THRESHOLD_PCT = 50
+
+interface NotepadWindowProps {
+  note: Note
+  onUpdate: (id: string, updates: Partial<Note>) => void
+  onClose: (id: string) => void
+  onFocus: (id: string) => void
+  onZoomToNote: (id: string) => void
+  onDuplicate: (id: string) => void
+  scale: number
+  allNotes: Note[]
+  canvasOffset: { x: number; y: number }
+  autoFocus?: boolean
+}
+
+function ToolbarButton({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+}: {
+  active?: boolean
+  onClick: () => void
+  icon: LucideIcon
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      onMouseDown={(e) => {
+        e.preventDefault()
+        onClick()
+      }}
+      aria-label={label}
+      className={`flex items-center justify-center rounded-md p-1.5 transition-colors ${
+        active
+          ? 'bg-primary/15 text-primary'
+          : 'text-note-foreground/50 hover:bg-note-foreground/5 hover:text-note-foreground/80'
+      }`}
+    >
+      <Icon size={15} strokeWidth={active ? 2.5 : 2} />
+    </button>
+  )
+}
+
+export default function NotepadWindow({
+  note,
+  onUpdate,
+  onClose,
+  onFocus,
+  onZoomToNote,
+  onDuplicate,
+  scale,
+  allNotes,
+  canvasOffset,
+  autoFocus = false,
+}: NotepadWindowProps) {
+  const windowRef = useRef<HTMLDivElement>(null)
+  const isDragging = useRef(false)
+  const hasDragged = useRef(false)
+  // Keep latest values accessible inside stale drag useEffect closure
+  const allNotesRef = useRef(allNotes)
+  allNotesRef.current = allNotes
+  const canvasOffsetRef = useRef(canvasOffset)
+  canvasOffsetRef.current = canvasOffset
+  const isResizing = useRef(false)
+  const dragStart = useRef({ x: 0, y: 0 })
+  const resizeStart = useRef({ width: 0, height: 0, clientX: 0, clientY: 0 })
+  const [isMaximized, setIsMaximized] = useState(false)
+  const [isMinimized, setIsMinimized] = useState(false)
+  const [preMaxState, setPreMaxState] = useState({ x: 0, y: 0, width: 0, height: 0 })
+  const editorRef = useRef<HTMLDivElement>(null)
+  const [isEditingTitle, setIsEditingTitle] = useState(false)
+  const [draftTitle, setDraftTitle] = useState('')
+  const titleInputRef = useRef<HTMLInputElement>(null)
+  // True only after the rename input has actually received focus.
+  // Prevents spurious blur events fired by Radix UI's focus-restoration
+  // (when the context menu closes) from immediately closing the rename field.
+  const inputHadFocusRef = useRef(false)
+  const [isHovered, setIsHovered] = useState(false)
+
+  const [isBold, setIsBold] = useState(false)
+  const [isItalic, setIsItalic] = useState(false)
+  const [isUnderlined, setIsUnderlined] = useState(false)
+  const [currentFontSize, setCurrentFontSize] = useState(14)
+
+  const isOverview = Math.round(scale * 100) <= OVERVIEW_THRESHOLD_PCT
+
+  const updateFormattingState = useCallback(() => {
+    setIsBold(document.queryCommandState('bold'))
+    setIsItalic(document.queryCommandState('italic'))
+    setIsUnderlined(document.queryCommandState('underline'))
+    const size = document.queryCommandValue('fontSize')
+    if (size) {
+      const sizeMap: Record<string, number> = {
+        '1': 10, '2': 12, '3': 14, '4': 16, '5': 18, '6': 24, '7': 32,
+      }
+      setCurrentFontSize(sizeMap[size] || 14)
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      if (!editorRef.current) return
+      const sel = window.getSelection()
+      if (sel && editorRef.current.contains(sel.anchorNode)) {
+        updateFormattingState()
+      }
+    }
+    document.addEventListener('selectionchange', handleSelectionChange)
+    return () => document.removeEventListener('selectionchange', handleSelectionChange)
+  }, [updateFormattingState])
+
+  useEffect(() => {
+    if (!isEditingTitle) return
+    // Defer focus/select so the context menu fully closes first — if we run
+    // synchronously the context menu steals focus back and clears the selection.
+    const id = setTimeout(() => {
+      titleInputRef.current?.focus()
+      titleInputRef.current?.select()
+    }, 0)
+    return () => clearTimeout(id)
+  }, [isEditingTitle])
+
+  // Keep a ref to the latest note.content so the effect below can read it
+  // without note.content being in its dependency array (which would cause the
+  // effect to fire on every keystroke and reset the cursor — Bug 1).
+  const noteContentRef = useRef(note.content)
+  noteContentRef.current = note.content
+  useEffect(() => {
+    // When isOverview switches to false the contentEditable div (re)mounts.
+    // Unconditionally restoring innerHTML here fixes both:
+    //   Bug 1: cursor reset on every keystroke (effect only runs when isOverview changes)
+    //   Bug 2: content disappears after crossing the 50% threshold (always restores)
+    if (!isOverview && editorRef.current) {
+      editorRef.current.innerHTML = noteContentRef.current || ''
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOverview])
+
+  const startRename = useCallback(() => {
+    inputHadFocusRef.current = false
+    setDraftTitle(note.title)
+    setIsEditingTitle(true)
+  }, [note.title])
+
+  const commitRename = useCallback(() => {
+    inputHadFocusRef.current = false
+    const trimmed = draftTitle.trim()
+    if (trimmed) onUpdate(note.id, { title: trimmed })
+    setIsEditingTitle(false)
+  }, [draftTitle, note.id, onUpdate])
+
+  const cancelRename = useCallback(() => {
+    inputHadFocusRef.current = false
+    setIsEditingTitle(false)
+  }, [])
+
+  // Only commit on blur if the input was actually focused by the user —
+  // ignores any synthetic blur fired during context-menu close.
+  const handleRenameBlur = useCallback(() => {
+    if (!inputHadFocusRef.current) return
+    commitRename()
+  }, [commitRename])
+
+  const handleTitleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') { e.preventDefault(); commitRename() }
+    else if (e.key === 'Escape') { e.preventDefault(); cancelRename() }
+  }, [commitRename, cancelRename])
+
+  // Auto-focus the editor when this note was just created
+  useEffect(() => {
+    if (autoFocus && editorRef.current) {
+      editorRef.current.focus()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // mount-only
+
+  // Title bar drag (normal mode only)
+  const handleMouseDownDrag = useCallback(
+    (e: React.MouseEvent) => {
+      if ((e.target as HTMLElement).closest('button')) return
+      if (isEditingTitle && (e.target as HTMLElement).tagName === 'INPUT') return
+      if (isMaximized) return
+      e.preventDefault()
+      isDragging.current = true
+      dragStart.current = {
+        x: e.clientX / scale - note.x,
+        y: e.clientY / scale - note.y,
+      }
+      onFocus(note.id)
+    },
+    [note.x, note.y, note.id, onFocus, scale, isMaximized, isEditingTitle]
+  )
+
+  const handleMouseDownResize = useCallback(
+    (e: React.MouseEvent) => {
+      if (isMaximized) return
+      e.preventDefault()
+      e.stopPropagation()
+      isResizing.current = true
+      resizeStart.current = {
+        width: note.width,
+        height: note.height,
+        clientX: e.clientX,
+        clientY: e.clientY,
+      }
+      onFocus(note.id)
+    },
+    [note.id, note.width, note.height, onFocus, isMaximized]
+  )
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDragging.current) {
+        hasDragged.current = true
+        const rawX = e.clientX / scale - dragStart.current.x
+        const rawY = e.clientY / scale - dragStart.current.y
+        const { x: newX, y: newY } = snapToGrid(
+          rawX, rawY, note.id, note.width, note.height,
+          allNotesRef.current, scale, canvasOffsetRef.current
+        )
+        onUpdate(note.id, { x: newX, y: newY })
+      }
+      if (isResizing.current) {
+        const dx = (e.clientX - resizeStart.current.clientX) / scale
+        const dy = (e.clientY - resizeStart.current.clientY) / scale
+        const newWidth = Math.max(280, resizeStart.current.width + dx)
+        const newHeight = Math.max(200, resizeStart.current.height + dy)
+        onUpdate(note.id, { width: newWidth, height: newHeight })
+      }
+    }
+    const handleMouseUp = () => {
+      isDragging.current = false
+      isResizing.current = false
+    }
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [note.id, note.width, note.height, onUpdate, scale])
+
+  const toggleMaximize = useCallback(() => {
+    if (!isMaximized) {
+      setPreMaxState({ x: note.x, y: note.y, width: note.width, height: note.height })
+      onUpdate(note.id, { x: 20, y: 20, width: 900, height: 600 })
+    } else {
+      onUpdate(note.id, preMaxState)
+    }
+    setIsMaximized(!isMaximized)
+    onFocus(note.id)
+  }, [isMaximized, note, onUpdate, onFocus, preMaxState])
+
+  const toggleMinimize = useCallback(() => {
+    setIsMinimized((prev) => !prev)
+    onFocus(note.id)
+  }, [note.id, onFocus])
+
+  const execFormat = useCallback((command: string, value?: string) => {
+    document.execCommand(command, false, value)
+    editorRef.current?.focus()
+    setIsBold(document.queryCommandState('bold'))
+    setIsItalic(document.queryCommandState('italic'))
+    setIsUnderlined(document.queryCommandState('underline'))
+  }, [])
+
+  const handleFontSizeChange = useCallback(
+    (newSize: number) => {
+      const pxToCommand: Record<number, string> = {
+        10: '1', 12: '2', 14: '3', 16: '4', 18: '5', 24: '6', 32: '7',
+      }
+      execFormat('fontSize', pxToCommand[newSize] || '3')
+      setCurrentFontSize(newSize)
+    },
+    [execFormat]
+  )
+
+  const handleEditorInput = useCallback(() => {
+    if (editorRef.current) {
+      onUpdate(note.id, { content: editorRef.current.innerHTML })
+    }
+  }, [note.id, onUpdate])
+
+  const textContent = editorRef.current?.textContent || ''
+  const wordCount = textContent.trim() ? textContent.trim().split(/\s+/).length : 0
+  const charCount = textContent.length
+
+  // Double-click title bar → focus note (normal mode)
+  const handleTitleBarDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (isOverview) return
+      if (isEditingTitle) return
+      e.stopPropagation()
+      onFocus(note.id)
+      onZoomToNote(note.id)
+    },
+    [isOverview, isEditingTitle, note.id, onFocus, onZoomToNote]
+  )
+
+  return (
+    <div
+      ref={windowRef}
+      className={`absolute flex flex-col overflow-hidden rounded-lg border border-note-border bg-note-bg shadow-lg shadow-black/20 transition-shadow ${
+        isOverview
+          ? 'cursor-grab active:cursor-grabbing hover:border-primary/60 hover:shadow-xl hover:shadow-primary/10'
+          : 'hover:shadow-xl hover:shadow-black/25'
+      }`}
+      style={{
+        left: `${note.x}px`,
+        top: `${note.y}px`,
+        width: `${note.width}px`,
+        height: isMinimized ? 'auto' : `${note.height}px`,
+        zIndex: note.zIndex,
+        backgroundColor: note.color,
+      }}
+      onMouseDown={(e) => {
+        if (isOverview) {
+          if ((e.target as HTMLElement).closest('button')) return
+          e.preventDefault()
+          hasDragged.current = false
+          isDragging.current = true
+          dragStart.current = {
+            x: e.clientX / scale - note.x,
+            y: e.clientY / scale - note.y,
+          }
+          onFocus(note.id)
+        } else {
+          onFocus(note.id)
+          onUpdate(note.id, { zIndex: getNextZIndex() })
+        }
+      }}
+      onDoubleClick={(e) => {
+        // In overview mode, double-click anywhere on the note zooms to it
+        if (!isOverview) return
+        if (hasDragged.current) return
+        e.stopPropagation()
+        onFocus(note.id)
+        onZoomToNote(note.id)
+      }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Overview hover label — pointer-events-none so dblclick reaches the note div */}
+      {isOverview && (
+        <div
+          className={`pointer-events-none absolute inset-0 z-10 flex items-center justify-center transition-opacity duration-200 ${
+            isHovered ? 'opacity-100' : 'opacity-0'
+          } bg-note-bg/80 backdrop-blur-sm`}
+        >
+          <span className="rounded-md bg-primary/10 px-4 py-2 text-5xl font-semibold text-primary">
+            {note.title || 'Untitled'}
+          </span>
+        </div>
+      )}
+
+      {/* Title Bar — wrapped in ContextMenu for right-click menu */}
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            className={`flex shrink-0 items-center gap-2 border-b border-note-border bg-note-titlebar/60 px-3 py-2 ${
+              isMaximized ? '' : 'cursor-default'
+            }`}
+            style={{ position: 'relative', zIndex: 20 }}
+            onMouseDown={isOverview ? undefined : handleMouseDownDrag}
+            onDoubleClick={handleTitleBarDoubleClick}
+          >
+            {!isOverview && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  aria-label="Close note"
+                  onClick={() => onClose(note.id)}
+                  className="group flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-400 transition-colors hover:bg-red-500"
+                >
+                  <X size={8} className="text-red-800 opacity-0 transition-opacity group-hover:opacity-100" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Minimize note"
+                  onClick={toggleMinimize}
+                  className="group flex h-3.5 w-3.5 items-center justify-center rounded-full bg-yellow-400 transition-colors hover:bg-yellow-500"
+                >
+                  <Minus size={8} className="text-yellow-800 opacity-0 transition-opacity group-hover:opacity-100" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Maximize note"
+                  onClick={toggleMaximize}
+                  className="group flex h-3.5 w-3.5 items-center justify-center rounded-full bg-green-400 transition-colors hover:bg-green-500"
+                >
+                  <Maximize2 size={7} className="text-green-800 opacity-0 transition-opacity group-hover:opacity-100" />
+                </button>
+              </div>
+            )}
+
+            {isEditingTitle && !isOverview ? (
+              <div className="flex min-w-0 flex-1 items-center gap-1">
+                <input
+                  ref={titleInputRef}
+                  type="text"
+                  value={draftTitle}
+                  onChange={(e) => setDraftTitle(e.target.value)}
+                  onFocus={() => { inputHadFocusRef.current = true }}
+                  onBlur={handleRenameBlur}
+                  onKeyDown={handleTitleKeyDown}
+                  className="min-w-0 flex-1 rounded-sm bg-note-bg px-1.5 py-0.5 text-center text-xs font-medium text-note-foreground outline-none ring-1 ring-primary/40"
+                  onMouseDown={(e) => e.stopPropagation()}
+                />
+                <button
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); commitRename() }}
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-500 text-white transition-colors hover:bg-green-600"
+                  aria-label="Accept rename"
+                >
+                  <Check size={11} strokeWidth={2.5} />
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); cancelRename() }}
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-400 text-white transition-colors hover:bg-red-500"
+                  aria-label="Cancel rename"
+                >
+                  <X size={11} strokeWidth={2.5} />
+                </button>
+              </div>
+            ) : (
+              <div className="min-w-0 flex-1 overflow-hidden text-center">
+                <span
+                  className="select-none text-xs font-medium text-note-foreground/70"
+                  onDoubleClick={(e) => { if (!isOverview) { e.stopPropagation(); startRename() } }}
+                >
+                  {note.title || 'Untitled'}
+                </span>
+              </div>
+            )}
+
+            {!isOverview && <div className="w-[52px]" />}
+          </div>
+        </ContextMenuTrigger>
+
+        <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
+          {!isOverview && (
+            <ContextMenuItem onSelect={startRename}>
+              Rename
+            </ContextMenuItem>
+          )}
+          <ContextMenuItem onSelect={() => { onFocus(note.id); onZoomToNote(note.id) }}>
+            Focus
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => onDuplicate(note.id)}>
+            Duplicate
+          </ContextMenuItem>
+          {!isOverview && (
+            <ContextMenuItem onSelect={toggleMinimize}>
+              {isMinimized ? 'Restore' : 'Minimize'}
+            </ContextMenuItem>
+          )}
+        </ContextMenuContent>
+      </ContextMenu>
+
+      {/* Body — hidden when minimized */}
+      {!isMinimized && (
+        <>
+          {/* Formatting Toolbar — hidden in overview mode */}
+          {!isOverview && (
+            <div className="flex shrink-0 items-center gap-1 border-b border-note-border bg-note-toolbar px-3 py-1.5">
+              <ToolbarButton active={isBold} onClick={() => execFormat('bold')} icon={Bold} label="Bold" />
+              <ToolbarButton active={isItalic} onClick={() => execFormat('italic')} icon={Italic} label="Italic" />
+              <ToolbarButton active={isUnderlined} onClick={() => execFormat('underline')} icon={Underline} label="Underline" />
+              <div className="mx-1 h-4 w-px bg-note-foreground/10" />
+              <select
+                value={currentFontSize}
+                onChange={(e) => handleFontSizeChange(Number(e.target.value))}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="rounded-md border border-note-foreground/10 bg-note-toolbar px-1.5 py-0.5 text-xs text-note-foreground/60 outline-none focus:border-primary/40"
+                aria-label="Font size"
+              >
+                {[10, 12, 14, 16, 18, 24, 32].map((size) => (
+                  <option key={size} value={size}>{size}px</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Content Area */}
+          <div className="relative flex-1 overflow-hidden">
+            {isOverview ? (
+              <div
+                className="pointer-events-none h-full w-full select-none overflow-hidden p-4 font-mono text-sm leading-relaxed text-note-foreground/60"
+                dangerouslySetInnerHTML={{
+                  __html: note.content || '<span style="opacity:0.3">Empty note</span>',
+                }}
+              />
+            ) : (
+              <div
+                ref={editorRef}
+                contentEditable
+                suppressContentEditableWarning
+                onInput={handleEditorInput}
+                data-placeholder="Start typing your note..."
+                className="notepad-editor h-full w-full cursor-text overflow-auto p-4 font-mono text-sm leading-relaxed text-note-foreground focus:outline-none"
+              />
+            )}
+          </div>
+
+          {/* Status Bar — hidden in overview mode */}
+          {!isOverview && (
+            <div className="flex shrink-0 items-center justify-between border-t border-note-border bg-note-toolbar/60 px-3 py-1">
+              <span className="text-[10px] text-note-foreground/35">
+                {wordCount} {wordCount === 1 ? 'word' : 'words'} &middot;{' '}
+                {charCount} {charCount === 1 ? 'char' : 'chars'}
+              </span>
+              <div className="flex items-center gap-1">
+                {NOTE_COLORS.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    aria-label={`${c.name} note color`}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={() => onUpdate(note.id, { color: c.value })}
+                    className={`h-3.5 w-3.5 rounded-full border transition-transform hover:scale-125 ${
+                      note.color === c.value
+                        ? 'scale-125 border-note-foreground/50'
+                        : 'border-note-foreground/15'
+                    }`}
+                    style={{ backgroundColor: c.value }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Resize Handle */}
+      {!isMaximized && !isOverview && !isMinimized && (
+        <div
+          className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize"
+          onMouseDown={handleMouseDownResize}
+          aria-label="Resize note"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" className="text-note-foreground/20">
+            <path d="M14 14L8 14L14 8Z" fill="currentColor" />
+            <path d="M14 14L11 14L14 11Z" fill="currentColor" opacity="0.5" />
+          </svg>
+        </div>
+      )}
+    </div>
+  )
+}

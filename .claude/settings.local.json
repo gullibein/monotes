@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd C:\\\\Users\\\\gja\\\\OneDrive - Menntaský\\\\Desktop\\\\Claude_stuff\\\\infinite notes:*)",
+      "Bash(tail:*)",
+      "WebFetch(domain:www.instantdb.com)",
+      "Bash(cd \"C:\\\\Users\\\\gja\\\\OneDrive - Menntaský\\\\Desktop\\\\Claude_stuff\\\\infinite notes\" && npx instant-cli@latest push perms --app 2e644333-c3bd-4fda-be0f-05c6a7025772 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\gja\\\\OneDrive - Menntaský\\\\Desktop\\\\Claude_stuff\\\\infinite notes\" && npx instant-cli@latest login 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\gja\\\\OneDrive - Menntaský\\\\Desktop\\\\Claude_stuff\\\\infinite notes\" && echo \"y\" | npx instant-cli@latest login 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\gja\\\\OneDrive - Menntaský\\\\Desktop\\\\Claude_stuff\\\\infinite notes\" && echo \"y\" | npx instant-cli@latest push perms --app 2e644333-c3bd-4fda-be0f-05c6a7025772 2>&1)",
+      "Bash(git --version 2>&1 && where git 2>&1)"
+    ]
+  }
+}
