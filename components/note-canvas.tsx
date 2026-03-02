@@ -7,6 +7,13 @@ import CanvasControls from '@/components/canvas-controls'
 import ConfirmDialog from '@/components/confirm-dialog'
 import { db } from '@/lib/db'
 import { type Note, type Workspace, createNote, createNoteAt, getNextZIndex, initZIndexCounter } from '@/lib/notes-store'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
 
 const MIN_SCALE = 0.15
 const MAX_SCALE = 2
@@ -27,6 +34,8 @@ export default function NoteCanvas({ userId }: { userId: string }) {
   const [focusedNoteId, setFocusedNoteId] = useState<string | null>(null)
   const [isFocusMode, setIsFocusMode] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null)
+  const [copiedNote, setCopiedNote] = useState<Note | null>(null)
+  const contextMenuPosRef = useRef({ x: 0, y: 0 })
   const focusedNoteIdRef = useRef<string | null>(null)
   focusedNoteIdRef.current = focusedNoteId
   const isPanning = useRef(false)
@@ -186,6 +195,31 @@ export default function NoteCanvas({ userId }: { userId: string }) {
     [setNotes]
   )
 
+  const copyNote = useCallback(
+    (noteId: string) => {
+      const note = notes.find((n) => n.id === noteId)
+      if (note) setCopiedNote(note)
+    },
+    [notes]
+  )
+
+  const pasteNote = useCallback(() => {
+    if (!copiedNote) return
+    const { x: cx, y: cy } = contextMenuPosRef.current
+    const newId = crypto.randomUUID()
+    const newNote: Note = {
+      ...copiedNote,
+      id: newId,
+      x: (cx - offset.x) / scale - copiedNote.width / 2,
+      y: (cy - offset.y) / scale - copiedNote.height / 2,
+      zIndex: getNextZIndex(),
+      createdAt: Date.now(),
+    }
+    setNotes((prev) => [...prev, newNote])
+    setLatestNoteId(newId)
+    setFocusedNoteId(newId)
+  }, [copiedNote, offset, scale, setNotes])
+
   const selectionHistoryRef = useRef<string[]>([])
 
   const focusNote = useCallback(
@@ -213,7 +247,7 @@ export default function NoteCanvas({ userId }: { userId: string }) {
     const newName = `Workspace ${workspaces.length + 1}`
     setWorkspaces((prev) => [
       ...prev,
-      { id: newId, name: newName, notes: [createNote(0)] },
+      { id: newId, name: newName, notes: [] },
     ])
     setActiveWorkspaceId(newId)
   }, [workspaces.length])
@@ -496,35 +530,53 @@ export default function NoteCanvas({ userId }: { userId: string }) {
         <rect width="100%" height="100%" fill="url(#dot-grid)" />
       </svg>
 
-      <div
-        ref={canvasRef}
-        className="absolute inset-0 cursor-grab active:cursor-grabbing"
-        onMouseDown={handleCanvasMouseDown}
-        onDoubleClick={handleCanvasDoubleClick}
-      >
-        <div
-          className="origin-top-left"
-          style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`, width: '10000px', height: '10000px' }}
-        >
-          {notes.map((note) => (
-            <NotepadWindow
-              key={note.id}
-              note={note}
-              onUpdate={updateNote}
-              onClose={closeNote}
-              onFocus={focusNote}
-              onZoomToNote={zoomToNote}
-              onDuplicate={duplicateNote}
-              scale={scale}
-              allNotes={notes}
-              canvasOffset={offset}
-              autoFocus={note.id === latestNoteId}
-              isFocused={note.id === focusedNoteId}
-              isFocusMode={isFocusMode}
-            />
-          ))}
-        </div>
-      </div>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            ref={canvasRef}
+            className="absolute inset-0 cursor-grab active:cursor-grabbing"
+            onMouseDown={handleCanvasMouseDown}
+            onDoubleClick={handleCanvasDoubleClick}
+            onContextMenu={(e) => { contextMenuPosRef.current = { x: e.clientX, y: e.clientY } }}
+          >
+            <div
+              className="origin-top-left"
+              style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`, width: '10000px', height: '10000px' }}
+            >
+              {notes.map((note) => (
+                <NotepadWindow
+                  key={note.id}
+                  note={note}
+                  onUpdate={updateNote}
+                  onClose={closeNote}
+                  onFocus={focusNote}
+                  onZoomToNote={zoomToNote}
+                  onDuplicate={duplicateNote}
+                  onCopy={copyNote}
+                  scale={scale}
+                  allNotes={notes}
+                  canvasOffset={offset}
+                  autoFocus={note.id === latestNoteId}
+                  isFocused={note.id === focusedNoteId}
+                  isFocusMode={isFocusMode}
+                />
+              ))}
+            </div>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
+          <ContextMenuItem onSelect={() => addNoteAt(contextMenuPosRef.current.x, contextMenuPosRef.current.y)}>
+            New note
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={pasteNote} disabled={!copiedNote}>
+            Paste note
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={zoomFit} disabled={notes.length === 0}>
+            Fit to view
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
 
       {notes.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">

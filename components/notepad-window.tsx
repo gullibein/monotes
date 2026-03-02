@@ -114,6 +114,7 @@ interface NotepadWindowProps {
   onFocus: (id: string) => void
   onZoomToNote: (id: string) => void
   onDuplicate: (id: string) => void
+  onCopy: (id: string) => void
   scale: number
   allNotes: Note[]
   canvasOffset: { x: number; y: number }
@@ -159,6 +160,7 @@ export default function NotepadWindow({
   onFocus,
   onZoomToNote,
   onDuplicate,
+  onCopy,
   scale,
   allNotes,
   canvasOffset,
@@ -542,6 +544,7 @@ export default function NotepadWindow({
       }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onContextMenu={(e) => e.stopPropagation()}
     >
       {/* Overview hover label — pointer-events-none so dblclick reaches the note div */}
       {isOverview && (
@@ -662,6 +665,9 @@ export default function NotepadWindow({
           <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => onDuplicate(note.id)}>
             Duplicate
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onCopy(note.id)}>
+            Copy note
           </ContextMenuItem>
           {!isOverview && (
             <ContextMenuItem onSelect={toggleMinimize}>
