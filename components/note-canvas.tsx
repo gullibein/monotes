@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState, useEffect } from 'react'
 import { id as instantId } from '@instantdb/react'
 import NotepadWindow from '@/components/notepad-window'
 import CanvasControls from '@/components/canvas-controls'
+import ConfirmDialog from '@/components/confirm-dialog'
 import { db } from '@/lib/db'
 import { type Note, type Workspace, createNote, createNoteAt, getNextZIndex } from '@/lib/notes-store'
 
@@ -25,6 +26,7 @@ export default function NoteCanvas({ userId }: { userId: string }) {
   const [latestNoteId, setLatestNoteId] = useState<string | null>(null)
   const [focusedNoteId, setFocusedNoteId] = useState<string | null>(null)
   const [isFocusMode, setIsFocusMode] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null)
   const focusedNoteIdRef = useRef<string | null>(null)
   focusedNoteIdRef.current = focusedNoteId
   const isPanning = useRef(false)
@@ -221,15 +223,25 @@ export default function NoteCanvas({ userId }: { userId: string }) {
     const ws = workspaces.find((w) => w.id === wsId)
     if (!ws) return
     if (workspaces.length <= 1) {
-      if (!confirm('Delete all notes in workspace?')) return
-      setWorkspaces((prev) => prev.map((w) => (w.id === wsId ? { ...w, notes: [] } : w)))
+      setDeleteConfirm({
+        message: 'Delete all notes in workspace?',
+        onConfirm: () => {
+          setWorkspaces((prev) => prev.map((w) => (w.id === wsId ? { ...w, notes: [] } : w)))
+          setDeleteConfirm(null)
+        },
+      })
       return
     }
-    if (!confirm(`Delete workspace "${ws.name}"?`)) return
-    setWorkspaces((prev) => {
-      const next = prev.filter((w) => w.id !== wsId)
-      setActiveWorkspaceId((cur) => (cur === wsId ? next[0].id : cur))
-      return next
+    setDeleteConfirm({
+      message: `Delete workspace "${ws.name}"?`,
+      onConfirm: () => {
+        setWorkspaces((prev) => {
+          const next = prev.filter((w) => w.id !== wsId)
+          setActiveWorkspaceId((cur) => (cur === wsId ? next[0].id : cur))
+          return next
+        })
+        setDeleteConfirm(null)
+      },
     })
   }, [workspaces])
 
@@ -527,6 +539,14 @@ export default function NoteCanvas({ userId }: { userId: string }) {
         isFocusMode={isFocusMode}
         onToggleFocusMode={toggleFocusMode}
       />
+
+      {deleteConfirm && (
+        <ConfirmDialog
+          message={deleteConfirm.message}
+          onConfirm={deleteConfirm.onConfirm}
+          onCancel={() => setDeleteConfirm(null)}
+        />
+      )}
     </div>
   )
 }

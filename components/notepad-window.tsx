@@ -1,6 +1,8 @@
 'use client'
 
 import { useCallback, useRef, useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
+import ConfirmDialog from '@/components/confirm-dialog'
 import {
   Bold,
   Italic,
@@ -197,6 +199,11 @@ export default function NotepadWindow({
   // (when the context menu closes) from immediately closing the rename field.
   const inputHadFocusRef = useRef(false)
   const [isHovered, setIsHovered] = useState(false)
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false)
+  // Captures isFocused at mousedown so onClick can test the pre-click state.
+  // Without this, React re-renders between mousedown and click, making isFocused
+  // always appear true by the time onClick fires.
+  const wasFocusedRef = useRef(false)
 
   const [isBold, setIsBold] = useState(false)
   const [isItalic, setIsItalic] = useState(false)
@@ -259,7 +266,7 @@ export default function NotepadWindow({
 
   const handleClose = useCallback(() => {
     const text = note.content?.replace(/<[^>]*>/g, '').trim() ?? ''
-    if (text.length > 0 && !confirm('Delete this note? This cannot be undone.')) return
+    if (text.length > 0) { setShowCloseConfirm(true); return }
     onClose(note.id)
   }, [note.id, note.content, onClose])
 
@@ -472,6 +479,7 @@ export default function NotepadWindow({
   )
 
   return (
+    <>
     <div
       ref={windowRef}
       className={`absolute flex flex-col overflow-hidden rounded-lg border border-note-border bg-note-bg shadow-lg shadow-black/20 transition-shadow ${
@@ -544,8 +552,8 @@ export default function NotepadWindow({
                 <button
                   type="button"
                   aria-label="Close note"
-                  disabled={!isFocused}
-                  onClick={handleClose}
+                  onMouseDown={() => { wasFocusedRef.current = isFocused }}
+                  onClick={() => { if (!wasFocusedRef.current) return; handleClose() }}
                   className={`group flex h-3.5 w-3.5 items-center justify-center rounded-full transition-colors ${
                     isFocused ? 'bg-red-400 hover:bg-red-500' : 'bg-neutral-300 dark:bg-neutral-600'
                   }`}
@@ -555,8 +563,8 @@ export default function NotepadWindow({
                 <button
                   type="button"
                   aria-label="Minimize note"
-                  disabled={!isFocused}
-                  onClick={toggleMinimize}
+                  onMouseDown={() => { wasFocusedRef.current = isFocused }}
+                  onClick={() => { if (!wasFocusedRef.current) return; toggleMinimize() }}
                   className={`group flex h-3.5 w-3.5 items-center justify-center rounded-full transition-colors ${
                     isFocused ? 'bg-yellow-400 hover:bg-yellow-500' : 'bg-neutral-300 dark:bg-neutral-600'
                   }`}
@@ -566,8 +574,8 @@ export default function NotepadWindow({
                 <button
                   type="button"
                   aria-label="Maximize note"
-                  disabled={!isFocused}
-                  onClick={toggleMaximize}
+                  onMouseDown={() => { wasFocusedRef.current = isFocused }}
+                  onClick={() => { if (!wasFocusedRef.current) return; toggleMaximize() }}
                   className={`group flex h-3.5 w-3.5 items-center justify-center rounded-full transition-colors ${
                     isFocused ? 'bg-green-400 hover:bg-green-500' : 'bg-neutral-300 dark:bg-neutral-600'
                   }`}
@@ -753,5 +761,15 @@ export default function NotepadWindow({
         </>
       )}
     </div>
+
+    {showCloseConfirm && createPortal(
+      <ConfirmDialog
+        message="Delete note?"
+        onConfirm={() => { setShowCloseConfirm(false); onClose(note.id) }}
+        onCancel={() => setShowCloseConfirm(false)}
+      />,
+      document.body
+    )}
+  </>
   )
 }
