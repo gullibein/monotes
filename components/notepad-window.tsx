@@ -43,22 +43,34 @@ function snapToGrid(
     if (other.id === noteId) continue
     const ow = other.width, oh = other.height
 
-    // Is the dragged note near an X edge of this note (side-adjacent in X)?
+    // Does the dragged note overlap (or nearly overlap) the other note in X?
+    // Used to gate Y touch-snaps (top/bottom edges) — no phantom rows far to the side.
+    const xOverlap = rawX + noteW > other.x - threshold && rawX < other.x + ow + threshold
+
+    // Does the dragged note overlap (or nearly overlap) the other note in Y?
+    // Used to gate X touch-snaps (left/right edges) — no phantom columns far above/below.
+    const yOverlap = rawY + noteH > other.y - threshold && rawY < other.y + oh + threshold
+
+    // Is the dragged note near a horizontal touch-snap position?
+    // Used to gate Y alignment snaps.
     const nearXEdge =
       Math.abs(rawX - (other.x - noteW)) < threshold ||
       Math.abs(rawX - (other.x + ow)) < threshold
 
-    // Is the dragged note near a Y edge of this note (side-adjacent in Y)?
+    // Is the dragged note near a vertical touch-snap position?
+    // Used to gate X alignment snaps.
     const nearYEdge =
       Math.abs(rawY - (other.y - noteH)) < threshold ||
       Math.abs(rawY - (other.y + oh)) < threshold
 
-    // Edge snaps (touching a side) are always available
-    // Alignment snaps (same row/column) only apply when also near the perpendicular edge
-    const xSnaps = [other.x - noteW, other.x + ow]
+    // X snaps: touch left/right only when Y-overlapping; alignment only when near a Y edge
+    const xSnaps: number[] = []
+    if (yOverlap) xSnaps.push(other.x - noteW, other.x + ow)
     if (nearYEdge) xSnaps.push(other.x, other.x + ow - noteW)
 
-    const ySnaps = [other.y - noteH, other.y + oh]
+    // Y snaps: touch top/bottom only when X-overlapping; alignment only when near an X edge
+    const ySnaps: number[] = []
+    if (xOverlap) ySnaps.push(other.y - noteH, other.y + oh)
     if (nearXEdge) ySnaps.push(other.y, other.y + oh - noteH)
 
     for (const tx of xSnaps) {

@@ -111,6 +111,7 @@ export default function NoteCanvas({ userId }: { userId: string }) {
     const newNote = createNote(notes.length)
     setNotes((prev) => [...prev, newNote])
     setLatestNoteId(newNote.id)
+    setFocusedNoteId(newNote.id)
   }, [setNotes, notes.length])
 
   const addNoteAt = useCallback(
@@ -120,6 +121,7 @@ export default function NoteCanvas({ userId }: { userId: string }) {
       const newNote = createNoteAt(canvasX, canvasY, notes.length)
       setNotes((prev) => [...prev, newNote])
       setLatestNoteId(newNote.id)
+      setFocusedNoteId(newNote.id)
     },
     [offset, scale, setNotes, notes.length]
   )
@@ -140,6 +142,7 @@ export default function NoteCanvas({ userId }: { userId: string }) {
 
   const duplicateNote = useCallback(
     (noteId: string) => {
+      const newId = crypto.randomUUID()
       setNotes((prev) => {
         const original = prev.find((n) => n.id === noteId)
         if (!original) return prev
@@ -147,7 +150,7 @@ export default function NoteCanvas({ userId }: { userId: string }) {
           ...prev,
           {
             ...original,
-            id: crypto.randomUUID(),
+            id: newId,
             x: original.x + 30,
             y: original.y + 30,
             zIndex: getNextZIndex(),
@@ -155,6 +158,8 @@ export default function NoteCanvas({ userId }: { userId: string }) {
           },
         ]
       })
+      setLatestNoteId(newId)
+      setFocusedNoteId(newId)
     },
     [setNotes]
   )
