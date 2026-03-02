@@ -177,6 +177,13 @@ export default function NotepadWindow({
   const windowRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
   const hasDragged = useRef(false)
+  // Deferred undo snapshot: pushed on first mousemove, not on mousedown,
+  // so plain clicks on the title bar / body don't create undo entries.
+  const actionSnapshotPushedRef = useRef(false)
+  const onDragStartRef = useRef(onDragStart)
+  onDragStartRef.current = onDragStart
+  const onResizeStartRef = useRef(onResizeStart)
+  onResizeStartRef.current = onResizeStart
   // Keep latest values accessible inside stale drag useEffect closure
   const allNotesRef = useRef(allNotes)
   allNotesRef.current = allNotes
@@ -329,7 +336,7 @@ export default function NotepadWindow({
       if ((e.target as HTMLElement).closest('button')) return
       if (isEditingTitle && (e.target as HTMLElement).tagName === 'INPUT') return
       e.preventDefault()
-      onDragStart?.()
+      actionSnapshotPushedRef.current = false
       isDragging.current = true
       dragStart.current = {
         x: e.clientX / scale - note.x,
@@ -337,7 +344,7 @@ export default function NotepadWindow({
       }
       onFocus(note.id)
     },
-    [note.x, note.y, note.id, onFocus, scale, isEditingTitle, onDragStart]
+    [note.x, note.y, note.id, onFocus, scale, isEditingTitle]
   )
 
   const handleMouseDownResize = useCallback(
@@ -357,7 +364,7 @@ export default function NotepadWindow({
         Math.min(note.x + note.width, ox + ow) - Math.max(note.x, ox)
       // Partners must share a real edge segment, not just touch at a corner.
       // Requiring overlap > SNAP_TOL excludes corner-only contacts.
-      onResizeStart?.()
+      actionSnapshotPushedRef.current = false
       isResizing.current = true
       resizeStart.current = {
         noteX: note.x, noteY: note.y, width: note.width, height: note.height,
@@ -369,12 +376,16 @@ export default function NotepadWindow({
       }
       onFocus(note.id)
     },
-    [note.id, note.x, note.y, note.width, note.height, onFocus, isMaximized, onResizeStart]
+    [note.id, note.x, note.y, note.width, note.height, onFocus, isMaximized]
   )
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (isDragging.current) {
+        if (!actionSnapshotPushedRef.current) {
+          actionSnapshotPushedRef.current = true
+          onDragStartRef.current?.()
+        }
         hasDragged.current = true
         const rawX = e.clientX / scale - dragStart.current.x
         const rawY = e.clientY / scale - dragStart.current.y
@@ -385,6 +396,10 @@ export default function NotepadWindow({
         onUpdate(note.id, { x: newX, y: newY })
       }
       if (isResizing.current) {
+        if (!actionSnapshotPushedRef.current) {
+          actionSnapshotPushedRef.current = true
+          onResizeStartRef.current?.()
+        }
         const { noteX: ox, noteY: oy, width: ow, height: oh, direction: dir,
                 eastPartners, westPartners, southPartners, northPartners } = resizeStart.current
         let dx = (e.clientX - resizeStart.current.clientX) / scale
@@ -539,7 +554,7 @@ export default function NotepadWindow({
           if ((e.target as HTMLElement).closest('button')) return
           e.preventDefault()
           hasDragged.current = false
-          onDragStart?.()
+          actionSnapshotPushedRef.current = false
           isDragging.current = true
           dragStart.current = {
             x: e.clientX / scale - note.x,
