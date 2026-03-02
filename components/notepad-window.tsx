@@ -424,13 +424,27 @@ export default function NotepadWindow({
   const toggleMaximize = useCallback(() => {
     if (!isMaximized) {
       setPreMaxState({ x: note.x, y: note.y, width: note.width, height: note.height })
-      onUpdate(note.id, { x: 20, y: 20, width: 900, height: 600 })
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      const HEADER_H = 57
+      const usableH = vh - HEADER_H
+      // Scale to 95% of usable viewport height, maintaining aspect ratio
+      const ratio = note.width / note.height
+      let newH = (0.95 * usableH) / scale
+      let newW = newH * ratio
+      // Cap at 99% of viewport width
+      const maxW = (0.99 * vw) / scale
+      if (newW > maxW) { newW = maxW; newH = newW / ratio }
+      // Center in the current viewport (canvas coords)
+      const cx = (vw / 2 - canvasOffset.x) / scale
+      const cy = (HEADER_H + usableH / 2 - canvasOffset.y) / scale
+      onUpdate(note.id, { x: cx - newW / 2, y: cy - newH / 2, width: newW, height: newH })
     } else {
       onUpdate(note.id, preMaxState)
     }
     setIsMaximized(!isMaximized)
     onFocus(note.id)
-  }, [isMaximized, note, onUpdate, onFocus, preMaxState])
+  }, [isMaximized, note, onUpdate, onFocus, preMaxState, scale, canvasOffset])
 
   const toggleMinimize = useCallback(() => {
     setIsMinimized((prev) => !prev)
