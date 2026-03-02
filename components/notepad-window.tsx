@@ -334,14 +334,21 @@ export default function NotepadWindow({
         allNotesRef.current
           .filter((o) => o.id !== note.id && pred(o))
           .map((o) => ({ id: o.id, origX: o.x, origY: o.y, origWidth: o.width, origHeight: o.height }))
+      // How much two ranges [a, a+sa] and [b, b+sb] overlap (negative = gap)
+      const yOverlap = (oy: number, oh: number) =>
+        Math.min(note.y + note.height, oy + oh) - Math.max(note.y, oy)
+      const xOverlap = (ox: number, ow: number) =>
+        Math.min(note.x + note.width, ox + ow) - Math.max(note.x, ox)
+      // Partners must share a real edge segment, not just touch at a corner.
+      // Requiring overlap > SNAP_TOL excludes corner-only contacts.
       isResizing.current = true
       resizeStart.current = {
         noteX: note.x, noteY: note.y, width: note.width, height: note.height,
         clientX: e.clientX, clientY: e.clientY, direction,
-        eastPartners:  makePartners((o) => Math.abs(o.x - (note.x + note.width)) < SNAP_TOL),
-        westPartners:  makePartners((o) => Math.abs((o.x + o.width) - note.x) < SNAP_TOL),
-        southPartners: makePartners((o) => Math.abs(o.y - (note.y + note.height)) < SNAP_TOL),
-        northPartners: makePartners((o) => Math.abs((o.y + o.height) - note.y) < SNAP_TOL),
+        eastPartners:  makePartners((o) => Math.abs(o.x - (note.x + note.width)) < SNAP_TOL && yOverlap(o.y, o.height) > SNAP_TOL),
+        westPartners:  makePartners((o) => Math.abs((o.x + o.width) - note.x) < SNAP_TOL && yOverlap(o.y, o.height) > SNAP_TOL),
+        southPartners: makePartners((o) => Math.abs(o.y - (note.y + note.height)) < SNAP_TOL && xOverlap(o.x, o.width) > SNAP_TOL),
+        northPartners: makePartners((o) => Math.abs((o.y + o.height) - note.y) < SNAP_TOL && xOverlap(o.x, o.width) > SNAP_TOL),
       }
       onFocus(note.id)
     },
