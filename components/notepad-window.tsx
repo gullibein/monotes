@@ -115,12 +115,15 @@ interface NotepadWindowProps {
   onZoomToNote: (id: string) => void
   onDuplicate: (id: string) => void
   onCopy: (id: string) => void
+  onDragStart?: () => void
+  onResizeStart?: () => void
   scale: number
   allNotes: Note[]
   canvasOffset: { x: number; y: number }
   autoFocus?: boolean
   isFocused?: boolean
   isFocusMode?: boolean
+  undoRevision?: number
 }
 
 function ToolbarButton({
@@ -161,12 +164,15 @@ export default function NotepadWindow({
   onZoomToNote,
   onDuplicate,
   onCopy,
+  onDragStart,
+  onResizeStart,
   scale,
   allNotes,
   canvasOffset,
   autoFocus = false,
   isFocused = false,
   isFocusMode = false,
+  undoRevision = 0,
 }: NotepadWindowProps) {
   const windowRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
@@ -266,6 +272,13 @@ export default function NotepadWindow({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOverview])
 
+  // Restore contentEditable innerHTML after an undo/redo restores note.content
+  useEffect(() => {
+    if (!undoRevision || isOverview || !editorRef.current) return
+    editorRef.current.innerHTML = noteContentRef.current || ''
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [undoRevision])
+
   const handleClose = useCallback(() => {
     const text = note.content?.replace(/<[^>]*>/g, '').trim() ?? ''
     if (text.length > 0) { setShowCloseConfirm(true); return }
@@ -316,6 +329,7 @@ export default function NotepadWindow({
       if ((e.target as HTMLElement).closest('button')) return
       if (isEditingTitle && (e.target as HTMLElement).tagName === 'INPUT') return
       e.preventDefault()
+      onDragStart?.()
       isDragging.current = true
       dragStart.current = {
         x: e.clientX / scale - note.x,
@@ -323,7 +337,7 @@ export default function NotepadWindow({
       }
       onFocus(note.id)
     },
-    [note.x, note.y, note.id, onFocus, scale, isEditingTitle]
+    [note.x, note.y, note.id, onFocus, scale, isEditingTitle, onDragStart]
   )
 
   const handleMouseDownResize = useCallback(
@@ -343,6 +357,7 @@ export default function NotepadWindow({
         Math.min(note.x + note.width, ox + ow) - Math.max(note.x, ox)
       // Partners must share a real edge segment, not just touch at a corner.
       // Requiring overlap > SNAP_TOL excludes corner-only contacts.
+      onResizeStart?.()
       isResizing.current = true
       resizeStart.current = {
         noteX: note.x, noteY: note.y, width: note.width, height: note.height,
@@ -354,7 +369,7 @@ export default function NotepadWindow({
       }
       onFocus(note.id)
     },
-    [note.id, note.x, note.y, note.width, note.height, onFocus, isMaximized]
+    [note.id, note.x, note.y, note.width, note.height, onFocus, isMaximized, onResizeStart]
   )
 
   useEffect(() => {
@@ -524,6 +539,7 @@ export default function NotepadWindow({
           if ((e.target as HTMLElement).closest('button')) return
           e.preventDefault()
           hasDragged.current = false
+          onDragStart?.()
           isDragging.current = true
           dragStart.current = {
             x: e.clientX / scale - note.x,

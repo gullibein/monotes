@@ -38,10 +38,22 @@ export default function NoteCanvas({ userId }: { userId: string }) {
   const contextMenuPosRef = useRef({ x: 0, y: 0 })
   const focusedNoteIdRef = useRef<string | null>(null)
   focusedNoteIdRef.current = focusedNoteId
+  const workspacesRef = useRef(workspaces)
+  workspacesRef.current = workspaces
+  const activeWorkspaceIdRef = useRef(activeWorkspaceId)
+  activeWorkspaceIdRef.current = activeWorkspaceId
   const isPanning = useRef(false)
   const panStart = useRef({ x: 0, y: 0 })
   const canvasRef = useRef<HTMLDivElement>(null)
   const animFrameRef = useRef<number | null>(null)
+
+  // ── Undo / Redo ──────────────────────────────────────────────────────────
+  type UndoSnapshot = { workspaces: Workspace[]; activeWorkspaceId: string }
+  const undoStack = useRef<UndoSnapshot[]>([])
+  const redoStack = useRef<UndoSnapshot[]>([])
+  const [undoRevision, setUndoRevision] = useState(0)
+  const preTypingSnapshotRef = useRef<UndoSnapshot | null>(null)
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── InstantDB persistence ─────────────────────────────────────────────────
 
@@ -119,17 +131,57 @@ export default function NoteCanvas({ userId }: { userId: string }) {
     [activeWorkspaceId]
   )
 
+  // ── Undo helpers (stable — only use refs) ────────────────────────────────
+
+  const scheduleTypingSnapshot = useCallback(() => {
+    if (!preTypingSnapshotRef.current) {
+      preTypingSnapshotRef.current = {
+        workspaces: workspacesRef.current,
+        activeWorkspaceId: activeWorkspaceIdRef.current,
+      }
+    }
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+    typingTimeoutRef.current = setTimeout(() => {
+      typingTimeoutRef.current = null
+      if (preTypingSnapshotRef.current) {
+        undoStack.current.push(preTypingSnapshotRef.current)
+        preTypingSnapshotRef.current = null
+        redoStack.current = []
+      }
+    }, 1000)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const pushUndoSnapshot = useCallback(() => {
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current)
+      typingTimeoutRef.current = null
+    }
+    if (preTypingSnapshotRef.current) {
+      undoStack.current.push(preTypingSnapshotRef.current)
+      preTypingSnapshotRef.current = null
+    }
+    undoStack.current.push({
+      workspaces: workspacesRef.current,
+      activeWorkspaceId: activeWorkspaceIdRef.current,
+    })
+    redoStack.current = []
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // ── Note CRUD ────────────────────────────────────────────────────────────
 
   const addNote = useCallback(() => {
+    pushUndoSnapshot()
     const newNote = createNote(notes.length)
     setNotes((prev) => [...prev, newNote])
     setLatestNoteId(newNote.id)
     setFocusedNoteId(newNote.id)
-  }, [setNotes, notes.length])
+  }, [setNotes, notes.length, pushUndoSnapshot])
 
   const addNoteAt = useCallback(
     (clientX: number, clientY: number) => {
+      pushUndoSnapshot()
       const canvasX = (clientX - offset.x) / scale
       const canvasY = (clientY - offset.y) / scale
       const newNote = createNoteAt(canvasX, canvasY, notes.length)
@@ -137,18 +189,21 @@ export default function NoteCanvas({ userId }: { userId: string }) {
       setLatestNoteId(newNote.id)
       setFocusedNoteId(newNote.id)
     },
-    [offset, scale, setNotes, notes.length]
+    [offset, scale, setNotes, notes.length, pushUndoSnapshot]
   )
 
   const updateNote = useCallback(
     (noteId: string, updates: Partial<Note>) => {
+      if ('content' in updates) scheduleTypingSnapshot()
+      if ('title' in updates) pushUndoSnapshot()
       setNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, ...updates } : n)))
     },
-    [setNotes]
+    [setNotes, scheduleTypingSnapshot, pushUndoSnapshot]
   )
 
   const closeNote = useCallback(
     (noteId: string) => {
+      pushUndoSnapshot()
       const wasSelected = focusedNoteIdRef.current === noteId
       setNotes((prev) => {
         const remaining = prev.filter((n) => n.id !== noteId)
@@ -168,11 +223,12 @@ export default function NoteCanvas({ userId }: { userId: string }) {
       })
       selectionHistoryRef.current = selectionHistoryRef.current.filter((id) => id !== noteId)
     },
-    [setNotes]
+    [setNotes, pushUndoSnapshot]
   )
 
   const duplicateNote = useCallback(
     (noteId: string) => {
+      pushUndoSnapshot()
       const newId = crypto.randomUUID()
       setNotes((prev) => {
         const original = prev.find((n) => n.id === noteId)
@@ -192,7 +248,7 @@ export default function NoteCanvas({ userId }: { userId: string }) {
       setLatestNoteId(newId)
       setFocusedNoteId(newId)
     },
-    [setNotes]
+    [setNotes, pushUndoSnapshot]
   )
 
   const copyNote = useCallback(
@@ -205,6 +261,7 @@ export default function NoteCanvas({ userId }: { userId: string }) {
 
   const pasteNote = useCallback(() => {
     if (!copiedNote) return
+    pushUndoSnapshot()
     const { x: cx, y: cy } = contextMenuPosRef.current
     const newId = crypto.randomUUID()
     const newNote: Note = {
@@ -218,7 +275,7 @@ export default function NoteCanvas({ userId }: { userId: string }) {
     setNotes((prev) => [...prev, newNote])
     setLatestNoteId(newId)
     setFocusedNoteId(newId)
-  }, [copiedNote, offset, scale, setNotes])
+  }, [copiedNote, offset, scale, setNotes, pushUndoSnapshot])
 
   const selectionHistoryRef = useRef<string[]>([])
 
@@ -243,6 +300,7 @@ export default function NoteCanvas({ userId }: { userId: string }) {
   // ── Workspace operations ─────────────────────────────────────────────────
 
   const addWorkspace = useCallback(() => {
+    pushUndoSnapshot()
     const newId = `ws-${Date.now()}`
     const newName = `Workspace ${workspaces.length + 1}`
     setWorkspaces((prev) => [
@@ -250,7 +308,7 @@ export default function NoteCanvas({ userId }: { userId: string }) {
       { id: newId, name: newName, notes: [] },
     ])
     setActiveWorkspaceId(newId)
-  }, [workspaces.length])
+  }, [workspaces.length, pushUndoSnapshot])
 
   const renameWorkspace = useCallback((wsId: string, name: string) => {
     setWorkspaces((prev) => prev.map((w) => (w.id === wsId ? { ...w, name } : w)))
@@ -259,19 +317,36 @@ export default function NoteCanvas({ userId }: { userId: string }) {
   const deleteWorkspace = useCallback((wsId: string) => {
     const ws = workspaces.find((w) => w.id === wsId)
     if (!ws) return
-    if (workspaces.length <= 1) {
+    const isEmpty = ws.notes.length === 0
+    const isLast = workspaces.length <= 1
+
+    if (isLast) {
+      if (isEmpty) return
       setDeleteConfirm({
-        message: 'Delete all notes in workspace?',
+        message: 'Delete this workspace?',
         onConfirm: () => {
+          pushUndoSnapshot()
           setWorkspaces((prev) => prev.map((w) => (w.id === wsId ? { ...w, notes: [] } : w)))
           setDeleteConfirm(null)
         },
       })
       return
     }
+
+    if (isEmpty) {
+      pushUndoSnapshot()
+      setWorkspaces((prev) => {
+        const next = prev.filter((w) => w.id !== wsId)
+        setActiveWorkspaceId((cur) => (cur === wsId ? next[0].id : cur))
+        return next
+      })
+      return
+    }
+
     setDeleteConfirm({
-      message: `Delete workspace "${ws.name}"?`,
+      message: 'Delete this workspace?',
       onConfirm: () => {
+        pushUndoSnapshot()
         setWorkspaces((prev) => {
           const next = prev.filter((w) => w.id !== wsId)
           setActiveWorkspaceId((cur) => (cur === wsId ? next[0].id : cur))
@@ -280,12 +355,66 @@ export default function NoteCanvas({ userId }: { userId: string }) {
         setDeleteConfirm(null)
       },
     })
-  }, [workspaces])
+  }, [workspaces, pushUndoSnapshot])
 
   const switchWorkspace = useCallback((wsId: string) => {
     setActiveWorkspaceId(wsId)
     setLatestNoteId(null)
   }, [])
+
+  const undo = useCallback(() => {
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current)
+      typingTimeoutRef.current = null
+      if (preTypingSnapshotRef.current) {
+        undoStack.current.push(preTypingSnapshotRef.current)
+        preTypingSnapshotRef.current = null
+      }
+    }
+    if (undoStack.current.length === 0) return
+    redoStack.current.push({
+      workspaces: workspacesRef.current,
+      activeWorkspaceId: activeWorkspaceIdRef.current,
+    })
+    const snapshot = undoStack.current.pop()!
+    setWorkspaces(snapshot.workspaces)
+    setActiveWorkspaceId(snapshot.activeWorkspaceId)
+    setFocusedNoteId(null)
+    setUndoRevision((r) => r + 1)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const redo = useCallback(() => {
+    if (redoStack.current.length === 0) return
+    undoStack.current.push({
+      workspaces: workspacesRef.current,
+      activeWorkspaceId: activeWorkspaceIdRef.current,
+    })
+    const snapshot = redoStack.current.pop()!
+    setWorkspaces(snapshot.workspaces)
+    setActiveWorkspaceId(snapshot.activeWorkspaceId)
+    setFocusedNoteId(null)
+    setUndoRevision((r) => r + 1)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return
+      if (e.key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        undo()
+      } else if (e.key === 'z' && e.shiftKey) {
+        e.preventDefault()
+        redo()
+      } else if (e.key === 'y') {
+        e.preventDefault()
+        redo()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [undo, redo])
 
   const toggleFocusMode = useCallback(() => {
     setIsFocusMode((prev) => {
@@ -553,12 +682,15 @@ export default function NoteCanvas({ userId }: { userId: string }) {
                   onZoomToNote={zoomToNote}
                   onDuplicate={duplicateNote}
                   onCopy={copyNote}
+                  onDragStart={pushUndoSnapshot}
+                  onResizeStart={pushUndoSnapshot}
                   scale={scale}
                   allNotes={notes}
                   canvasOffset={offset}
                   autoFocus={note.id === latestNoteId}
                   isFocused={note.id === focusedNoteId}
                   isFocusMode={isFocusMode}
+                  undoRevision={undoRevision}
                 />
               ))}
             </div>
