@@ -243,16 +243,17 @@ export default function NoteCanvas({ userId }: { userId: string }) {
     (noteId: string) => {
       const note = notes.find((n) => n.id === noteId)
       if (!note) return
+      const targetScale = isFocusMode ? FOCUS_SCALE : ZOOM_TO_NOTE_SCALE
       const vw = window.innerWidth
       const vh = window.innerHeight
       const noteCenterX = note.x + note.width / 2
       const noteCenterY = note.y + note.height / 2
-      animateToView(ZOOM_TO_NOTE_SCALE, {
-        x: vw / 2 - noteCenterX * ZOOM_TO_NOTE_SCALE,
-        y: vh / 2 - noteCenterY * ZOOM_TO_NOTE_SCALE,
+      animateToView(targetScale, {
+        x: vw / 2 - noteCenterX * targetScale,
+        y: vh / 2 - noteCenterY * targetScale,
       })
     },
-    [notes, animateToView]
+    [notes, animateToView, isFocusMode]
   )
 
   const zoomIn = useCallback(() => setScale((s) => Math.min(MAX_SCALE, s + ZOOM_STEP)), [])

@@ -288,7 +288,6 @@ export default function NotepadWindow({
     (e: React.MouseEvent) => {
       if ((e.target as HTMLElement).closest('button')) return
       if (isEditingTitle && (e.target as HTMLElement).tagName === 'INPUT') return
-      if (isMaximized) return
       e.preventDefault()
       isDragging.current = true
       dragStart.current = {
@@ -297,7 +296,7 @@ export default function NotepadWindow({
       }
       onFocus(note.id)
     },
-    [note.x, note.y, note.id, onFocus, scale, isMaximized, isEditingTitle]
+    [note.x, note.y, note.id, onFocus, scale, isEditingTitle]
   )
 
   const handleMouseDownResize = useCallback(
@@ -469,6 +468,7 @@ export default function NotepadWindow({
         height: isMinimized ? 'auto' : `${note.height}px`,
         zIndex: note.zIndex,
         backgroundColor: note.color,
+        filter: isFocusMode && !isFocused ? 'brightness(0.4)' : undefined,
       }}
       onMouseDown={(e) => {
         if (isOverview) {
@@ -516,7 +516,7 @@ export default function NotepadWindow({
           <div
             className={`flex shrink-0 items-center gap-2 border-b border-note-border px-3 py-2 ${
               isFocused ? 'bg-note-titlebar/90' : 'bg-note-titlebar/60'
-            } ${isMaximized ? '' : 'cursor-default'}`}
+            } cursor-default`}
             style={{ position: 'relative', zIndex: 20 }}
             onMouseDown={isOverview ? undefined : handleMouseDownDrag}
             onDoubleClick={handleTitleBarDoubleClick}
@@ -690,14 +690,6 @@ export default function NotepadWindow({
         </>
       )}
 
-      {/* Focus mode overlay — dims non-focused notes; clicking switches focus */}
-      {isFocusMode && !isFocused && (
-        <div
-          className="absolute inset-0 cursor-pointer rounded-lg bg-black/60"
-          style={{ zIndex: 50 }}
-          onClick={(e) => { e.stopPropagation(); onFocus(note.id) }}
-        />
-      )}
 
       {/* Resize Handles — all 8 directions.
           Handles extend 1px outside the padding box (into the border) so the
