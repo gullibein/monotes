@@ -515,6 +515,12 @@ export default function NotepadWindow({
     }
   }, [note.id, onUpdate])
 
+  const handleEditorPaste = useCallback((e: React.ClipboardEvent) => {
+    e.preventDefault()
+    const text = e.clipboardData.getData('text/plain')
+    document.execCommand('insertText', false, text)
+  }, [])
+
   const textContent = editorRef.current?.textContent || ''
   const wordCount = textContent.trim() ? textContent.trim().split(/\s+/).length : 0
   const charCount = textContent.length
@@ -747,6 +753,7 @@ export default function NotepadWindow({
                 contentEditable
                 suppressContentEditableWarning
                 onInput={handleEditorInput}
+                onPaste={handleEditorPaste}
                 data-placeholder="Start typing your note..."
                 className="notepad-editor h-full w-full cursor-text overflow-auto p-4 font-mono text-sm leading-relaxed text-note-foreground focus:outline-none"
               />
