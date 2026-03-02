@@ -257,6 +257,12 @@ export default function NotepadWindow({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOverview])
 
+  const handleClose = useCallback(() => {
+    const text = note.content?.replace(/<[^>]*>/g, '').trim() ?? ''
+    if (text.length > 0 && !confirm('Delete this note? This cannot be undone.')) return
+    onClose(note.id)
+  }, [note.id, note.content, onClose])
+
   const startRename = useCallback(() => {
     inputHadFocusRef.current = false
     setDraftTitle(note.title)
@@ -538,26 +544,35 @@ export default function NotepadWindow({
                 <button
                   type="button"
                   aria-label="Close note"
-                  onClick={() => onClose(note.id)}
-                  className="group flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-400 transition-colors hover:bg-red-500"
+                  disabled={!isFocused}
+                  onClick={handleClose}
+                  className={`group flex h-3.5 w-3.5 items-center justify-center rounded-full transition-colors ${
+                    isFocused ? 'bg-red-400 hover:bg-red-500' : 'bg-neutral-300 dark:bg-neutral-600'
+                  }`}
                 >
-                  <X size={8} className="text-red-800 opacity-0 transition-opacity group-hover:opacity-100" />
+                  <X size={8} className={`opacity-0 transition-opacity group-hover:opacity-100 ${isFocused ? 'text-red-800' : 'text-neutral-500'}`} />
                 </button>
                 <button
                   type="button"
                   aria-label="Minimize note"
+                  disabled={!isFocused}
                   onClick={toggleMinimize}
-                  className="group flex h-3.5 w-3.5 items-center justify-center rounded-full bg-yellow-400 transition-colors hover:bg-yellow-500"
+                  className={`group flex h-3.5 w-3.5 items-center justify-center rounded-full transition-colors ${
+                    isFocused ? 'bg-yellow-400 hover:bg-yellow-500' : 'bg-neutral-300 dark:bg-neutral-600'
+                  }`}
                 >
-                  <Minus size={8} className="text-yellow-800 opacity-0 transition-opacity group-hover:opacity-100" />
+                  <Minus size={8} className={`opacity-0 transition-opacity group-hover:opacity-100 ${isFocused ? 'text-yellow-800' : 'text-neutral-500'}`} />
                 </button>
                 <button
                   type="button"
                   aria-label="Maximize note"
+                  disabled={!isFocused}
                   onClick={toggleMaximize}
-                  className="group flex h-3.5 w-3.5 items-center justify-center rounded-full bg-green-400 transition-colors hover:bg-green-500"
+                  className={`group flex h-3.5 w-3.5 items-center justify-center rounded-full transition-colors ${
+                    isFocused ? 'bg-green-400 hover:bg-green-500' : 'bg-neutral-300 dark:bg-neutral-600'
+                  }`}
                 >
-                  <Maximize2 size={7} className="text-green-800 opacity-0 transition-opacity group-hover:opacity-100" />
+                  <Maximize2 size={7} className={`opacity-0 transition-opacity group-hover:opacity-100 ${isFocused ? 'text-green-800' : 'text-neutral-500'}`} />
                 </button>
               </div>
             )}

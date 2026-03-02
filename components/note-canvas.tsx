@@ -135,7 +135,24 @@ export default function NoteCanvas({ userId }: { userId: string }) {
 
   const closeNote = useCallback(
     (noteId: string) => {
-      setNotes((prev) => prev.filter((n) => n.id !== noteId))
+      const wasSelected = focusedNoteIdRef.current === noteId
+      setNotes((prev) => {
+        const remaining = prev.filter((n) => n.id !== noteId)
+        if (wasSelected) {
+          if (remaining.length > 0) {
+            const historyNext = selectionHistoryRef.current.find((id) =>
+              remaining.some((n) => n.id === id)
+            )
+            const nextId =
+              historyNext ?? [...remaining].sort((a, b) => a.x - b.x || a.y - b.y)[0].id
+            setFocusedNoteId(nextId)
+          } else {
+            setFocusedNoteId(null)
+          }
+        }
+        return remaining
+      })
+      selectionHistoryRef.current = selectionHistoryRef.current.filter((id) => id !== noteId)
     },
     [setNotes]
   )
@@ -164,12 +181,22 @@ export default function NoteCanvas({ userId }: { userId: string }) {
     [setNotes]
   )
 
+  const selectionHistoryRef = useRef<string[]>([])
+
   const focusNote = useCallback(
     (noteId: string) => {
       setNotes((prev) =>
         prev.map((n) => (n.id === noteId ? { ...n, zIndex: getNextZIndex() } : n))
       )
-      setFocusedNoteId(noteId)
+      setFocusedNoteId((prev) => {
+        if (prev && prev !== noteId) {
+          selectionHistoryRef.current = [
+            prev,
+            ...selectionHistoryRef.current.filter((id) => id !== prev),
+          ].slice(0, 20)
+        }
+        return noteId
+      })
     },
     [setNotes]
   )
@@ -191,13 +218,20 @@ export default function NoteCanvas({ userId }: { userId: string }) {
   }, [])
 
   const deleteWorkspace = useCallback((wsId: string) => {
+    const ws = workspaces.find((w) => w.id === wsId)
+    if (!ws) return
+    if (workspaces.length <= 1) {
+      if (!confirm('Delete all notes in workspace?')) return
+      setWorkspaces((prev) => prev.map((w) => (w.id === wsId ? { ...w, notes: [] } : w)))
+      return
+    }
+    if (!confirm(`Delete workspace "${ws.name}"?`)) return
     setWorkspaces((prev) => {
-      if (prev.length <= 1) return prev // never delete the last workspace
       const next = prev.filter((w) => w.id !== wsId)
       setActiveWorkspaceId((cur) => (cur === wsId ? next[0].id : cur))
       return next
     })
-  }, [])
+  }, [workspaces])
 
   const switchWorkspace = useCallback((wsId: string) => {
     setActiveWorkspaceId(wsId)
