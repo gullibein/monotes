@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Maximize, ZoomIn, ZoomOut, FileText, LogOut, Check, X, Crosshair } from 'lucide-react'
+import { Plus, Maximize, ZoomIn, ZoomOut, FileText, LogOut, Check, X, Crosshair, HelpCircle } from 'lucide-react'
 import { type Workspace } from '@/lib/notes-store'
 import {
   ContextMenu,
@@ -159,6 +159,8 @@ export default function CanvasControls({
   isFocusMode,
   onToggleFocusMode,
 }: CanvasControlsProps) {
+  const [showHelp, setShowHelp] = useState(false)
+
   return (
     <>
       {/* Top Bar */}
@@ -199,7 +201,7 @@ export default function CanvasControls({
             </button>
           </div>
 
-          {/* Right: Focus Mode + New Note + Sign Out */}
+          {/* Right: Focus Mode + New Note + Help + Sign Out */}
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -220,6 +222,15 @@ export default function CanvasControls({
             >
               <Plus size={13} />
               <span>New Note</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowHelp(true)}
+              aria-label="Help"
+              title="Help"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <HelpCircle size={15} />
             </button>
             <button
               type="button"
@@ -283,6 +294,67 @@ export default function CanvasControls({
         <span>Double-click canvas for new note</span>
         <span>Right-click note title for options</span>
       </div>
+
+      {/* Help Dialog */}
+      {showHelp && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setShowHelp(false) }}
+        >
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onMouseDown={() => setShowHelp(false)} />
+          <div className="relative w-full max-w-sm rounded-xl border border-border bg-background p-6 shadow-xl shadow-black/30">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-foreground">How to use FloNotes</h2>
+              <button
+                type="button"
+                onClick={() => setShowHelp(false)}
+                className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs text-muted-foreground">
+              <section>
+                <p className="mb-1.5 font-semibold text-foreground">Notes</p>
+                <ul className="space-y-1">
+                  <li>Click <strong className="text-foreground font-medium">New Note</strong> or double-click the canvas to create a note</li>
+                  <li>Click a note to select it, then type to edit</li>
+                  <li>Double-click the title to rename it</li>
+                  <li>Drag the title bar to move; drag any edge or corner to resize</li>
+                  <li>Notes snap to each other when nearby</li>
+                  <li>Right-click the title bar for more options</li>
+                </ul>
+              </section>
+
+              <section>
+                <p className="mb-1.5 font-semibold text-foreground">Canvas</p>
+                <ul className="space-y-1">
+                  <li>Scroll to zoom · drag the background to pan</li>
+                  <li>Use the bottom bar to zoom in/out or fit all notes to view</li>
+                  <li>Right-click the canvas to add or paste a note</li>
+                </ul>
+              </section>
+
+              <section>
+                <p className="mb-1.5 font-semibold text-foreground">Workspaces</p>
+                <ul className="space-y-1">
+                  <li>Click a tab to switch workspaces · <strong className="text-foreground font-medium">+</strong> to add a new one</li>
+                  <li>Right-click a tab to rename or delete it</li>
+                </ul>
+              </section>
+
+              <section>
+                <p className="mb-1.5 font-semibold text-foreground">Shortcuts</p>
+                <ul className="space-y-1">
+                  <li><kbd className="rounded border border-border bg-secondary px-1 py-0.5 font-mono text-[10px]">Ctrl Z</kbd> undo · <kbd className="rounded border border-border bg-secondary px-1 py-0.5 font-mono text-[10px]">Ctrl Shift Z</kbd> redo</li>
+                  <li><strong className="text-foreground font-medium">Focus mode</strong> (crosshair button) — zooms in on one note; use <kbd className="rounded border border-border bg-secondary px-1 py-0.5 font-mono text-[10px]">Tab</kbd> to cycle through notes</li>
+                </ul>
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
