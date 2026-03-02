@@ -319,11 +319,16 @@ export default function CanvasControls({
                 <p className="mb-1.5 font-semibold text-foreground">Notes</p>
                 <ul className="space-y-1">
                   <li>Click <strong className="text-foreground font-medium">New Note</strong> or double-click the canvas to create a note</li>
-                  <li>Click a note to select it, then type to edit</li>
                   <li>Double-click the title to rename it</li>
-                  <li>Drag the title bar to move; drag any edge or corner to resize</li>
-                  <li>Notes snap to each other when nearby</li>
                   <li>Right-click the title bar for more options</li>
+                </ul>
+              </section>
+
+              <section>
+                <p className="mb-1.5 font-semibold text-foreground">Focus mode</p>
+                <ul className="space-y-1">
+                  <li>Click the crosshair button to zoom in on one note</li>
+                  <li>Use <kbd className="rounded border border-border bg-secondary px-1 py-0.5 font-mono text-[10px]">Tab</kbd> to cycle through notes</li>
                 </ul>
               </section>
 
@@ -331,7 +336,6 @@ export default function CanvasControls({
                 <p className="mb-1.5 font-semibold text-foreground">Canvas</p>
                 <ul className="space-y-1">
                   <li>Scroll to zoom · drag the background to pan</li>
-                  <li>Use the bottom bar to zoom in/out or fit all notes to view</li>
                   <li>Right-click the canvas to add or paste a note</li>
                 </ul>
               </section>
@@ -348,7 +352,6 @@ export default function CanvasControls({
                 <p className="mb-1.5 font-semibold text-foreground">Shortcuts</p>
                 <ul className="space-y-1">
                   <li><kbd className="rounded border border-border bg-secondary px-1 py-0.5 font-mono text-[10px]">Ctrl Z</kbd> undo · <kbd className="rounded border border-border bg-secondary px-1 py-0.5 font-mono text-[10px]">Ctrl Shift Z</kbd> redo</li>
-                  <li><strong className="text-foreground font-medium">Focus mode</strong> (crosshair button) — zooms in on one note; use <kbd className="rounded border border-border bg-secondary px-1 py-0.5 font-mono text-[10px]">Tab</kbd> to cycle through notes</li>
                 </ul>
               </section>
             </div>
