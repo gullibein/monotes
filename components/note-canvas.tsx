@@ -6,7 +6,7 @@ import NotepadWindow from '@/components/notepad-window'
 import CanvasControls from '@/components/canvas-controls'
 import ConfirmDialog from '@/components/confirm-dialog'
 import { db } from '@/lib/db'
-import { type Note, type Workspace, createNote, createNoteAt, getNextZIndex } from '@/lib/notes-store'
+import { type Note, type Workspace, createNote, createNoteAt, getNextZIndex, initZIndexCounter } from '@/lib/notes-store'
 
 const MIN_SCALE = 0.15
 const MAX_SCALE = 2
@@ -58,6 +58,11 @@ export default function NoteCanvas({ userId }: { userId: string }) {
       setWorkspaces(saved.workspaces)
       setActiveWorkspaceId(saved.activeWorkspaceId ?? saved.workspaces[0].id)
       pendingAutoFit.current = true
+      // Seed the z-index counter so new selections always stack above saved notes
+      const maxZ = saved.workspaces
+        .flatMap((w: Workspace) => w.notes.map((n: Note) => n.zIndex ?? 0))
+        .reduce((a: number, b: number) => Math.max(a, b), 0)
+      initZIndexCounter(maxZ)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dbLoading, dbData])

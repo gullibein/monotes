@@ -33,6 +33,11 @@ export function getNextZIndex() {
   return ++nextZIndex
 }
 
+/** Call once after loading saved notes to ensure new z-indexes are always higher. */
+export function initZIndexCounter(max: number) {
+  if (max > nextZIndex) nextZIndex = max
+}
+
 const CASCADE_OFFSET_X = 30
 const CASCADE_OFFSET_Y = 30
 

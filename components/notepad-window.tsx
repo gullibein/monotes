@@ -13,7 +13,7 @@ import {
   Maximize2,
   type LucideIcon,
 } from 'lucide-react'
-import { type Note, getNextZIndex, NOTE_COLORS } from '@/lib/notes-store'
+import { type Note, NOTE_COLORS } from '@/lib/notes-store'
 
 const SNAP_PX = 12 // screen-pixel snap radius
 
@@ -523,7 +523,6 @@ export default function NotepadWindow({
           onFocus(note.id)
         } else {
           onFocus(note.id)
-          onUpdate(note.id, { zIndex: getNextZIndex() })
         }
       }}
       onDoubleClick={(e) => {
