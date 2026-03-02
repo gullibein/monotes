@@ -40,6 +40,8 @@ export default function NoteCanvas({ userId }: { userId: string }) {
   const dbRecordId = useRef<string | null>(null)
   // True once we've applied (or skipped) the initial DB load
   const dbInitialized = useRef(false)
+  // Set to true when saved data is loaded; triggers a one-time auto-fit
+  const pendingAutoFit = useRef(false)
 
   const { data: dbData, isLoading: dbLoading } = db.useQuery({
     userState: { $: { where: { userId } } },
@@ -55,11 +57,7 @@ export default function NoteCanvas({ userId }: { userId: string }) {
       dbRecordId.current = saved.id
       setWorkspaces(saved.workspaces)
       setActiveWorkspaceId(saved.activeWorkspaceId ?? saved.workspaces[0].id)
-    } else {
-      // No saved data — create the default first note (client-side to avoid SSR UUID mismatch)
-      setWorkspaces((prev) =>
-        prev.map((w) => (w.id === 'ws-1' ? { ...w, notes: [createNote(0)] } : w))
-      )
+      pendingAutoFit.current = true
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dbLoading, dbData])
@@ -344,6 +342,18 @@ export default function NoteCanvas({ userId }: { userId: string }) {
     })
   }, [notes, zoomReset, animateToView])
 
+  // Auto-fit once after saved notes are restored from the DB.
+  // pendingAutoFit is set by the DB load effect; this fires on the next
+  // render after notes have been populated from the restored workspaces.
+  const zoomFitRef = useRef(zoomFit)
+  zoomFitRef.current = zoomFit
+  useEffect(() => {
+    if (!pendingAutoFit.current || notes.length === 0) return
+    pendingAutoFit.current = false
+    zoomFitRef.current()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notes])
+
   // ── Focus mode ───────────────────────────────────────────────────────────
 
   const FOCUS_SCALE = 1.2
@@ -525,7 +535,6 @@ export default function NoteCanvas({ userId }: { userId: string }) {
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
         onZoomFit={zoomFit}
-        onZoomReset={zoomReset}
         onZoomToCenter={zoomToCenter}
         onAddNote={addNote}
         noteCount={notes.length}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Maximize, RotateCcw, ZoomIn, ZoomOut, FileText, LogOut, Check, X, Crosshair } from 'lucide-react'
+import { Plus, Maximize, ZoomIn, ZoomOut, FileText, LogOut, Check, X, Crosshair } from 'lucide-react'
 import { type Workspace } from '@/lib/notes-store'
 import {
   ContextMenu,
@@ -15,7 +15,6 @@ interface CanvasControlsProps {
   onZoomIn: () => void
   onZoomOut: () => void
   onZoomFit: () => void
-  onZoomReset: () => void
   onZoomToCenter: () => void
   onAddNote: () => void
   noteCount: number
@@ -147,7 +146,6 @@ export default function CanvasControls({
   onZoomIn,
   onZoomOut,
   onZoomFit,
-  onZoomReset,
   onZoomToCenter,
   onAddNote,
   noteCount,
@@ -276,16 +274,6 @@ export default function CanvasControls({
           title="Fit all notes in view"
         >
           <Maximize size={14} />
-        </button>
-
-        <button
-          type="button"
-          onClick={onZoomReset}
-          aria-label="Reset view"
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-          title="Reset view to origin"
-        >
-          <RotateCcw size={14} />
         </button>
       </div>
 
