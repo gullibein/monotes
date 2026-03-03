@@ -1,11 +1,10 @@
 'use client'
 
 import { useCallback, useMemo, useRef, useState, useEffect } from 'react'
-import { id as instantId } from '@instantdb/react'
 import NotepadWindow from '@/components/notepad-window'
 import CanvasControls from '@/components/canvas-controls'
 import ConfirmDialog from '@/components/confirm-dialog'
-import { db } from '@/lib/db'
+import { supabase } from '@/lib/supabase'
 import { type Note, type Workspace, createNote, createNoteAt, getNextZIndex, initZIndexCounter } from '@/lib/notes-store'
 import { encryptText, decryptText } from '@/lib/crypto'
 import {
@@ -68,81 +67,63 @@ export default function NoteCanvas({
   const preTypingSnapshotRef = useRef<UndoSnapshot | null>(null)
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // ── InstantDB persistence ─────────────────────────────────────────────────
+  // ── Supabase persistence ──────────────────────────────────────────────────
 
-  // Track the DB record id once it's known
-  const dbRecordId = useRef<string | null>(null)
   // True once we've applied (or skipped) the initial DB load
   const dbInitialized = useRef(false)
   // Set to true when saved data is loaded; triggers a one-time auto-fit
   const pendingAutoFit = useRef(false)
+  // Tracks whether we're ready to render the canvas (data loaded or guest)
+  const [appReady, setAppReady] = useState(isGuest)
 
-  const { data: dbData, isLoading: dbLoading } = db.useQuery(
-    isGuest ? null : { userState: { $: { where: { userId: userId! } } } }
-  )
-
-  // Load saved state once when DB data first arrives
+  // Load saved state once on mount
   useEffect(() => {
-    if (dbInitialized.current) return
-    if (isGuest) { dbInitialized.current = true; return }
-    if (dbLoading) return
+    if (dbInitialized.current || isGuest) return
     dbInitialized.current = true
 
-    const saved = dbData?.userState?.[0]
-    if (!saved) return
-
     ;(async () => {
-      let workspacesToLoad: Workspace[] | null = null
-      let activeIdToLoad: string | null = null
+      const { data: saved } = await supabase
+        .from('user_state')
+        .select('encrypted_data')
+        .eq('user_id', userId!)
+        .single()
 
-      if (saved.encryptedData && cryptoKeyRef.current) {
+      if (saved?.encrypted_data && cryptoKeyRef.current) {
         try {
-          const decrypted = await decryptText(cryptoKeyRef.current, saved.encryptedData as string)
+          const decrypted = await decryptText(cryptoKeyRef.current, saved.encrypted_data as string)
           const parsed = JSON.parse(decrypted) as { workspaces: Workspace[]; activeWorkspaceId: string }
-          workspacesToLoad = parsed.workspaces
-          activeIdToLoad = parsed.activeWorkspaceId
+          if (parsed.workspaces?.length) {
+            setWorkspaces(parsed.workspaces)
+            setActiveWorkspaceId(parsed.activeWorkspaceId ?? parsed.workspaces[0].id)
+            pendingAutoFit.current = true
+            const maxZ = parsed.workspaces
+              .flatMap((w: Workspace) => w.notes.map((n: Note) => n.zIndex ?? 0))
+              .reduce((a: number, b: number) => Math.max(a, b), 0)
+            initZIndexCounter(maxZ)
+          }
         } catch {
           // Decryption failed — start with empty state
         }
       }
 
-      if (workspacesToLoad?.length) {
-        dbRecordId.current = saved.id
-        setWorkspaces(workspacesToLoad)
-        setActiveWorkspaceId(activeIdToLoad ?? workspacesToLoad[0].id)
-        pendingAutoFit.current = true
-        // Seed the z-index counter so new selections always stack above saved notes
-        const maxZ = workspacesToLoad
-          .flatMap((w: Workspace) => w.notes.map((n: Note) => n.zIndex ?? 0))
-          .reduce((a: number, b: number) => Math.max(a, b), 0)
-        initZIndexCounter(maxZ)
-      }
+      setAppReady(true)
     })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dbLoading, dbData])
+  }, [])
 
   // Debounced save — writes 1.5 s after the last change to workspaces or activeWorkspaceId
   useEffect(() => {
-    if (isGuest || !dbInitialized.current) return
-    const stateId = dbRecordId.current ?? (() => {
-      const newId = instantId()
-      dbRecordId.current = newId
-      return newId
-    })()
+    if (isGuest || !appReady) return
     const timeout = setTimeout(async () => {
       const key = cryptoKeyRef.current
       if (!key) return
       const encryptedData = await encryptText(key, JSON.stringify({ workspaces, activeWorkspaceId }))
-      db.transact(
-        db.tx.userState[stateId].update({
-          userId,
-          encryptedData,
-          savedAt: Date.now(),
-        })
-      )
+      await supabase
+        .from('user_state')
+        .upsert({ user_id: userId!, encrypted_data: encryptedData, saved_at: Date.now() }, { onConflict: 'user_id' })
     }, SAVE_DEBOUNCE_MS)
     return () => clearTimeout(timeout)
-  }, [workspaces, activeWorkspaceId, userId])
+  }, [workspaces, activeWorkspaceId, userId, appReady])
 
   // ── Derived state ─────────────────────────────────────────────────────────
 
@@ -620,11 +601,11 @@ export default function NoteCanvas({
     }
     el.addEventListener('wheel', handleWheel, { passive: false })
     return () => el.removeEventListener('wheel', handleWheel)
-  // Re-run when dbLoading changes: the canvas div doesn't exist while loading,
+  // Re-run when appReady changes: the canvas div doesn't exist while loading,
   // so this is the trigger that attaches the listener once the canvas mounts.
   // scaleRef + functional setOffset keep the handler fresh without needing scale/offset as deps.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dbLoading])
+  }, [appReady])
 
   // ── Canvas panning ───────────────────────────────────────────────────────
 
@@ -668,7 +649,7 @@ export default function NoteCanvas({
 
   // ── Loading state ─────────────────────────────────────────────────────────
 
-  if (!isGuest && dbLoading) {
+  if (!appReady) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-canvas">
         <p className="text-sm text-muted-foreground">Loading your notes…</p>

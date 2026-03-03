@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { FileText } from 'lucide-react'
-import { db } from '@/lib/db'
+import { supabase } from '@/lib/supabase'
 import { deriveKey, saveKeyToSession } from '@/lib/crypto'
 
 export default function Login({
@@ -29,9 +29,11 @@ export default function Login({
     setLoading(true)
     try {
       if (mode === 'create') {
-        await db.auth.createAccount({ email: email.trim(), password })
+        const { error } = await supabase.auth.signUp({ email: email.trim(), password })
+        if (error) throw error
       } else {
-        await db.auth.signInWithEmail({ email: email.trim(), password })
+        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+        if (error) throw error
       }
       const key = await deriveKey(password, email.trim())
       await saveKeyToSession(key)

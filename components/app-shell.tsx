@@ -1,17 +1,30 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { db } from '@/lib/db'
+import { supabase } from '@/lib/supabase'
+import type { User } from '@supabase/supabase-js'
 import NoteCanvas from './note-canvas'
 import Login from './login'
 import { loadKeyFromSession, clearKeyFromSession } from '@/lib/crypto'
 import { FileText } from 'lucide-react'
 
 export default function AppShell() {
-  const { isLoading, user } = db.useAuth()
+  const [user, setUser] = useState<User | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
   const [cryptoKey, setCryptoKey] = useState<CryptoKey | null>(null)
   const [keyLoaded, setKeyLoaded] = useState(false)
   const [guestMode, setGuestMode] = useState(false)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+      setAuthLoading(false)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
 
   useEffect(() => {
     loadKeyFromSession().then((key) => {
@@ -20,7 +33,7 @@ export default function AppShell() {
     })
   }, [])
 
-  if (isLoading || !keyLoaded) {
+  if (authLoading || !keyLoaded) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-canvas">
         <div className="flex flex-col items-center gap-3 text-muted-foreground">
@@ -53,7 +66,7 @@ export default function AppShell() {
       onSignOut={() => {
         clearKeyFromSession()
         setCryptoKey(null)
-        db.auth.signOut()
+        supabase.auth.signOut()
       }}
     />
   )
