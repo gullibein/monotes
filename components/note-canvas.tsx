@@ -7,6 +7,7 @@ import CanvasControls from '@/components/canvas-controls'
 import ConfirmDialog from '@/components/confirm-dialog'
 import { db } from '@/lib/db'
 import { type Note, type Workspace, createNote, createNoteAt, getNextZIndex, initZIndexCounter } from '@/lib/notes-store'
+import { encryptText, decryptText } from '@/lib/crypto'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -21,8 +22,18 @@ const ZOOM_STEP = 0.1
 const ZOOM_TO_NOTE_SCALE = 1.0
 const SAVE_DEBOUNCE_MS = 1500
 
-export default function NoteCanvas({ userId, onSignOut }: { userId: string | null; onSignOut?: () => void }) {
+export default function NoteCanvas({
+  userId,
+  cryptoKey = null,
+  onSignOut,
+}: {
+  userId: string | null
+  cryptoKey?: CryptoKey | null
+  onSignOut?: () => void
+}) {
   const isGuest = userId === null
+  const cryptoKeyRef = useRef(cryptoKey)
+  cryptoKeyRef.current = cryptoKey
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([
     { id: 'ws-1', name: 'Workspace 1', notes: [] },
@@ -78,17 +89,35 @@ export default function NoteCanvas({ userId, onSignOut }: { userId: string | nul
     dbInitialized.current = true
 
     const saved = dbData?.userState?.[0]
-    if (saved?.workspaces?.length) {
-      dbRecordId.current = saved.id
-      setWorkspaces(saved.workspaces)
-      setActiveWorkspaceId(saved.activeWorkspaceId ?? saved.workspaces[0].id)
-      pendingAutoFit.current = true
-      // Seed the z-index counter so new selections always stack above saved notes
-      const maxZ = saved.workspaces
-        .flatMap((w: Workspace) => w.notes.map((n: Note) => n.zIndex ?? 0))
-        .reduce((a: number, b: number) => Math.max(a, b), 0)
-      initZIndexCounter(maxZ)
-    }
+    if (!saved) return
+
+    ;(async () => {
+      let workspacesToLoad: Workspace[] | null = null
+      let activeIdToLoad: string | null = null
+
+      if (saved.encryptedData && cryptoKeyRef.current) {
+        try {
+          const decrypted = await decryptText(cryptoKeyRef.current, saved.encryptedData as string)
+          const parsed = JSON.parse(decrypted) as { workspaces: Workspace[]; activeWorkspaceId: string }
+          workspacesToLoad = parsed.workspaces
+          activeIdToLoad = parsed.activeWorkspaceId
+        } catch {
+          // Decryption failed — start with empty state
+        }
+      }
+
+      if (workspacesToLoad?.length) {
+        dbRecordId.current = saved.id
+        setWorkspaces(workspacesToLoad)
+        setActiveWorkspaceId(activeIdToLoad ?? workspacesToLoad[0].id)
+        pendingAutoFit.current = true
+        // Seed the z-index counter so new selections always stack above saved notes
+        const maxZ = workspacesToLoad
+          .flatMap((w: Workspace) => w.notes.map((n: Note) => n.zIndex ?? 0))
+          .reduce((a: number, b: number) => Math.max(a, b), 0)
+        initZIndexCounter(maxZ)
+      }
+    })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dbLoading, dbData])
 
@@ -100,12 +129,14 @@ export default function NoteCanvas({ userId, onSignOut }: { userId: string | nul
       dbRecordId.current = newId
       return newId
     })()
-    const timeout = setTimeout(() => {
+    const timeout = setTimeout(async () => {
+      const key = cryptoKeyRef.current
+      if (!key) return
+      const encryptedData = await encryptText(key, JSON.stringify({ workspaces, activeWorkspaceId }))
       db.transact(
         db.tx.userState[stateId].update({
           userId,
-          workspaces,
-          activeWorkspaceId,
+          encryptedData,
           savedAt: Date.now(),
         })
       )
@@ -738,7 +769,7 @@ export default function NoteCanvas({ userId, onSignOut }: { userId: string | nul
         onRenameWorkspace={renameWorkspace}
         onDeleteWorkspace={deleteWorkspace}
         isGuest={isGuest}
-        onSignOut={isGuest ? (onSignOut ?? (() => {})) : () => db.auth.signOut()}
+        onSignOut={onSignOut ?? (() => {})}
         isFocusMode={isFocusMode}
         onToggleFocusMode={toggleFocusMode}
       />
