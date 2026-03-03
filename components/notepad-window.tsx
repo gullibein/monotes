@@ -420,6 +420,52 @@ export default function NotepadWindow({
         if (dir.includes('s')) newH = Math.max(MIN_H, oh + dy)
         if (dir.includes('w')) { const d = Math.min(dx, ow - MIN_W); newX = ox + d; newW = ow - d }
         if (dir.includes('n')) { const d = Math.min(dy, oh - MIN_H); newY = oy + d; newH = oh - d }
+
+        // Snap moving edge to x-edges of north/south neighbours, and y-edges of east/west neighbours
+        const snapThr = SNAP_PX / scale
+        if (dir.includes('e')) {
+          let bestD = snapThr + 1, bestSnap = ox + newW
+          for (const p of [...northPartners, ...southPartners])
+            for (const tx of [p.origX, p.origX + p.origWidth]) {
+              const d = Math.abs(ox + newW - tx)
+              if (d < bestD) { bestD = d; bestSnap = tx }
+            }
+          if (bestD <= snapThr) newW = Math.max(MIN_W, bestSnap - ox)
+        }
+        if (dir.includes('w')) {
+          let bestD = snapThr + 1, bestSnap = newX
+          for (const p of [...northPartners, ...southPartners])
+            for (const tx of [p.origX, p.origX + p.origWidth]) {
+              const d = Math.abs(newX - tx)
+              if (d < bestD) { bestD = d; bestSnap = tx }
+            }
+          if (bestD <= snapThr) {
+            const snappedW = ox + ow - bestSnap
+            if (snappedW >= MIN_W) { newX = bestSnap; newW = snappedW }
+          }
+        }
+        if (dir.includes('s')) {
+          let bestD = snapThr + 1, bestSnap = oy + newH
+          for (const p of [...eastPartners, ...westPartners])
+            for (const ty of [p.origY, p.origY + p.origHeight]) {
+              const d = Math.abs(oy + newH - ty)
+              if (d < bestD) { bestD = d; bestSnap = ty }
+            }
+          if (bestD <= snapThr) newH = Math.max(MIN_H, bestSnap - oy)
+        }
+        if (dir.includes('n')) {
+          let bestD = snapThr + 1, bestSnap = newY
+          for (const p of [...eastPartners, ...westPartners])
+            for (const ty of [p.origY, p.origY + p.origHeight]) {
+              const d = Math.abs(newY - ty)
+              if (d < bestD) { bestD = d; bestSnap = ty }
+            }
+          if (bestD <= snapThr) {
+            const snappedH = oy + oh - bestSnap
+            if (snappedH >= MIN_H) { newY = bestSnap; newH = snappedH }
+          }
+        }
+
         onUpdate(note.id, { x: newX, y: newY, width: newW, height: newH })
         // Coupled resize: snapped partners share the moved edge
         if (dir.includes('e')) {
