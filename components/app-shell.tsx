@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { db } from '@/lib/db'
 import NoteCanvas from './note-canvas'
 import Login from './login'
@@ -7,6 +8,7 @@ import { FileText } from 'lucide-react'
 
 export default function AppShell() {
   const { isLoading, user } = db.useAuth()
+  const [guestMode, setGuestMode] = useState(false)
 
   if (isLoading) {
     return (
@@ -21,7 +23,11 @@ export default function AppShell() {
     )
   }
 
-  if (!user) return <Login />
+  if (guestMode) {
+    return <NoteCanvas userId={null} onSignOut={() => setGuestMode(false)} />
+  }
+
+  if (!user) return <Login onContinueAsGuest={() => setGuestMode(true)} />
 
   return <NoteCanvas userId={user.id} />
 }

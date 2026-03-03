@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Maximize, ZoomIn, ZoomOut, FileText, LogOut, Check, X, Crosshair, HelpCircle } from 'lucide-react'
+import { Plus, Maximize, ZoomIn, ZoomOut, FileText, LogOut, LogIn, Check, X, Crosshair, HelpCircle } from 'lucide-react'
 import { type Workspace } from '@/lib/notes-store'
 import {
   ContextMenu,
@@ -27,6 +27,7 @@ interface CanvasControlsProps {
   onSignOut: () => void
   isFocusMode: boolean
   onToggleFocusMode: () => void
+  isGuest?: boolean
 }
 
 function WorkspaceTab({
@@ -158,6 +159,7 @@ export default function CanvasControls({
   onSignOut,
   isFocusMode,
   onToggleFocusMode,
+  isGuest = false,
 }: CanvasControlsProps) {
   const [showHelp, setShowHelp] = useState(false)
 
@@ -232,15 +234,31 @@ export default function CanvasControls({
             >
               <HelpCircle size={15} />
             </button>
-            <button
-              type="button"
-              onClick={onSignOut}
-              aria-label="Sign out"
-              title="Sign out"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-            >
-              <LogOut size={15} />
-            </button>
+            {isGuest ? (
+              <>
+                <span className="text-xs text-amber-500/80 select-none">Notes not saved</span>
+                <button
+                  type="button"
+                  onClick={onSignOut}
+                  aria-label="Sign in"
+                  title="Sign in to save your notes"
+                  className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-amber-500/80 transition-colors hover:bg-amber-500/10 hover:text-amber-500"
+                >
+                  <LogIn size={14} />
+                  <span>Sign in</span>
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={onSignOut}
+                aria-label="Sign out"
+                title="Sign out"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              >
+                <LogOut size={15} />
+              </button>
+            )}
           </div>
         </div>
       </header>

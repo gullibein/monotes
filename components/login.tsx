@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { FileText } from 'lucide-react'
 import { db } from '@/lib/db'
 
-export default function Login() {
+export default function Login({ onContinueAsGuest }: { onContinueAsGuest: () => void }) {
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [sentEmail, setSentEmail] = useState('')
@@ -105,6 +105,25 @@ export default function Login() {
 
         {error && (
           <p className="mt-3 text-center text-xs text-red-500">{error}</p>
+        )}
+
+        {!sentEmail && (
+          <div className="mt-5">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-xs text-muted-foreground">or</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+            <button
+              onClick={onContinueAsGuest}
+              className="w-full rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              Continue without signing in
+            </button>
+            <p className="mt-2.5 text-center text-xs text-muted-foreground/70">
+              Notes will not be saved if you continue without signing in
+            </p>
+          </div>
         )}
       </div>
     </div>

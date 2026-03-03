@@ -21,7 +21,9 @@ const ZOOM_STEP = 0.1
 const ZOOM_TO_NOTE_SCALE = 1.0
 const SAVE_DEBOUNCE_MS = 1500
 
-export default function NoteCanvas({ userId }: { userId: string }) {
+export default function NoteCanvas({ userId, onSignOut }: { userId: string | null; onSignOut?: () => void }) {
+  const isGuest = userId === null
+
   const [workspaces, setWorkspaces] = useState<Workspace[]>([
     { id: 'ws-1', name: 'Workspace 1', notes: [] },
   ])
@@ -64,13 +66,15 @@ export default function NoteCanvas({ userId }: { userId: string }) {
   // Set to true when saved data is loaded; triggers a one-time auto-fit
   const pendingAutoFit = useRef(false)
 
-  const { data: dbData, isLoading: dbLoading } = db.useQuery({
-    userState: { $: { where: { userId } } },
-  })
+  const { data: dbData, isLoading: dbLoading } = db.useQuery(
+    isGuest ? null : { userState: { $: { where: { userId: userId! } } } }
+  )
 
   // Load saved state once when DB data first arrives
   useEffect(() => {
-    if (dbLoading || dbInitialized.current) return
+    if (dbInitialized.current) return
+    if (isGuest) { dbInitialized.current = true; return }
+    if (dbLoading) return
     dbInitialized.current = true
 
     const saved = dbData?.userState?.[0]
@@ -90,7 +94,7 @@ export default function NoteCanvas({ userId }: { userId: string }) {
 
   // Debounced save — writes 1.5 s after the last change to workspaces or activeWorkspaceId
   useEffect(() => {
-    if (!dbInitialized.current) return
+    if (isGuest || !dbInitialized.current) return
     const stateId = dbRecordId.current ?? (() => {
       const newId = instantId()
       dbRecordId.current = newId
@@ -633,7 +637,7 @@ export default function NoteCanvas({ userId }: { userId: string }) {
 
   // ── Loading state ─────────────────────────────────────────────────────────
 
-  if (dbLoading) {
+  if (!isGuest && dbLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-canvas">
         <p className="text-sm text-muted-foreground">Loading your notes…</p>
@@ -733,7 +737,8 @@ export default function NoteCanvas({ userId }: { userId: string }) {
         onAddWorkspace={addWorkspace}
         onRenameWorkspace={renameWorkspace}
         onDeleteWorkspace={deleteWorkspace}
-        onSignOut={() => db.auth.signOut()}
+        isGuest={isGuest}
+        onSignOut={isGuest ? (onSignOut ?? (() => {})) : () => db.auth.signOut()}
         isFocusMode={isFocusMode}
         onToggleFocusMode={toggleFocusMode}
       />
