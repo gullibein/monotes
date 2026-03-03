@@ -587,7 +587,8 @@ export default function NoteCanvas({
     const el = canvasRef.current
     if (!el) return
     const handleWheel = (e: WheelEvent) => {
-      if ((e.target as HTMLElement).closest('[contenteditable="true"]')) return
+      const editor = (e.target as HTMLElement).closest('[contenteditable="true"]')
+      if (editor && editor.scrollHeight > editor.clientHeight) return
       e.preventDefault()
       if (animFrameRef.current) { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = null }
       const rect = el.getBoundingClientRect()
