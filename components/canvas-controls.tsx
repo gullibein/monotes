@@ -319,7 +319,7 @@ export default function CanvasControls({
           className="fixed inset-0 z-[200] flex items-center justify-center"
           onMouseDown={(e) => { if (e.target === e.currentTarget) setShowHelp(false) }}
         >
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onMouseDown={() => setShowHelp(false)} />
+          <div className="absolute inset-0 bg-black/[0.28] backdrop-blur-[3px]" onMouseDown={() => setShowHelp(false)} />
           <div className="relative w-full max-w-sm rounded-xl border border-border bg-background p-6 shadow-xl shadow-black/30">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-foreground">How to use FloNotes</h2>

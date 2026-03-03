@@ -12,7 +12,7 @@ export default function ConfirmDialog({ message, onConfirm, onCancel }: ConfirmD
       className="fixed inset-0 z-[200] flex items-center justify-center"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel() }}
     >
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onMouseDown={onCancel} />
+      <div className="absolute inset-0 bg-black/[0.28] backdrop-blur-[3px]" onMouseDown={onCancel} />
       <div className="relative w-full max-w-[260px] rounded-xl border border-border bg-background p-5 shadow-xl shadow-black/30">
         <p className="text-center text-sm font-medium text-foreground">{message}</p>
         <div className="mt-4 flex gap-2">
