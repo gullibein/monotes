@@ -518,7 +518,12 @@ export default function NotepadWindow({
   const handleEditorPaste = useCallback((e: React.ClipboardEvent) => {
     e.preventDefault()
     const text = e.clipboardData.getData('text/plain')
-    document.execCommand('insertText', false, text)
+    const html = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\n/g, '<br>')
+    document.execCommand('insertHTML', false, html)
   }, [])
 
   const textContent = editorRef.current?.textContent || ''
