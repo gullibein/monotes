@@ -56,6 +56,8 @@ export default function NoteCanvas({
   activeWorkspaceIdRef.current = activeWorkspaceId
   const isPanning = useRef(false)
   const panStart = useRef({ x: 0, y: 0 })
+  const offsetRef = useRef(offset)
+  offsetRef.current = offset
   const canvasRef = useRef<HTMLDivElement>(null)
   const animFrameRef = useRef<number | null>(null)
 
@@ -580,10 +582,11 @@ export default function NoteCanvas({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusedNoteId, isFocusMode])
 
-  // TAB / Shift-TAB cycles through notes in focus mode.
+  // TAB / Shift-TAB cycles through notes in focus mode; ESC exits focus mode.
   useEffect(() => {
     if (!isFocusMode) return
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setIsFocusMode(false); return }
       if (e.key !== 'Tab') return
       if ((e.target as HTMLElement).closest('[contenteditable="true"]')) return
       e.preventDefault()
@@ -663,6 +666,19 @@ export default function NoteCanvas({
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
     }
+  }, [])
+
+  // Middle-mouse drag from anywhere (notes, title bars, background)
+  useEffect(() => {
+    const handleMiddleMouseDown = (e: MouseEvent) => {
+      if (e.button !== 1) return
+      e.preventDefault()
+      if (animFrameRef.current) { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = null }
+      isPanning.current = true
+      panStart.current = { x: e.clientX - offsetRef.current.x, y: e.clientY - offsetRef.current.y }
+    }
+    window.addEventListener('mousedown', handleMiddleMouseDown)
+    return () => window.removeEventListener('mousedown', handleMiddleMouseDown)
   }, [])
 
   useEffect(() => {

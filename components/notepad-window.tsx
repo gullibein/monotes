@@ -114,38 +114,87 @@ function getDomain(url: string): string {
 const LinkContent = memo(function LinkContent({
   note,
   onUpdate,
+  isEditing,
+  onEditingChange,
 }: {
   note: Note
   onUpdate: (id: string, updates: Partial<Note>) => void
+  isEditing: boolean
+  onEditingChange: (v: boolean) => void
 }) {
   const [draft, setDraft] = useState(note.url ?? '')
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { setDraft(note.url ?? '') }, [note.url])
 
+  useEffect(() => {
+    if (isEditing) {
+      const id = setTimeout(() => { inputRef.current?.focus(); inputRef.current?.select() }, 0)
+      return () => clearTimeout(id)
+    }
+  }, [isEditing])
+
   const commit = useCallback(() => {
     let url = draft.trim()
-    if (!url) { onUpdate(note.id, { url: '' }); return }
+    if (!url) { onUpdate(note.id, { url: '' }); onEditingChange(false); return }
     if (!url.match(/^https?:\/\//)) url = 'https://' + url
     onUpdate(note.id, { url })
+    onEditingChange(false)
     const shouldAutoTitle = note.title === 'New Link'
     if (shouldAutoTitle) {
-      fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}&prerender=auto`)
+      fetch(`/api/title?url=${encodeURIComponent(url)}`)
         .then((r) => r.json())
         .then((data) => {
-          const title = data?.data?.title
+          const title = data?.title
           onUpdate(note.id, { title: title || getDomain(url) })
         })
         .catch(() => { try { onUpdate(note.id, { title: getDomain(url) }) } catch {} })
     }
-  }, [draft, note.id, note.title, onUpdate])
+  }, [draft, note.id, note.title, onUpdate, onEditingChange])
+
+  const cancel = useCallback(() => {
+    setDraft(note.url ?? '')
+    onEditingChange(false)
+  }, [note.url, onEditingChange])
+
+  if (!isEditing && note.url) {
+    return (
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div className="flex items-center px-3 py-2">
+            <a
+              href={note.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="min-w-0 flex-1 truncate text-xs text-blue-500 underline hover:text-blue-600 focus:outline-none"
+            >
+              {note.url}
+            </a>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
+          <ContextMenuItem onSelect={() => onEditingChange(true)}>Edit link</ContextMenuItem>
+          <ContextMenuItem onSelect={() => window.open(note.url, '_blank', 'noopener,noreferrer')}>
+            Open link
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    )
+  }
 
   return (
     <div className="flex items-center px-3 py-2">
       <input
+        ref={inputRef}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
-        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit() } }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); commit() }
+          else if (e.key === 'Escape') { e.preventDefault(); cancel() }
+        }}
         onMouseDown={(e) => e.stopPropagation()}
         placeholder="Paste a link…"
         className="min-w-0 flex-1 truncate bg-transparent text-xs text-note-foreground/70 outline-none placeholder:text-note-foreground/30"
@@ -249,6 +298,12 @@ export default function NotepadWindow({
     clientX: 0, clientY: 0, direction: 'se',
     eastPartners: [], westPartners: [], southPartners: [], northPartners: [],
   })
+  const [isLinkEditing, setIsLinkEditing] = useState(note.type === 'link' && !note.url)
+  // Re-enter edit mode if the URL is cleared (e.g. via undo)
+  useEffect(() => {
+    if (note.type === 'link' && !note.url) setIsLinkEditing(true)
+  }, [note.url, note.type])
+
   const [isMaximized, setIsMaximized] = useState(false)
   const [isMinimized, setIsMinimized] = useState(false)
   const [preMaxState, setPreMaxState] = useState({ x: 0, y: 0, width: 0, height: 0 })
@@ -382,6 +437,7 @@ export default function NotepadWindow({
   // Title bar drag (normal mode only)
   const handleMouseDownDrag = useCallback(
     (e: React.MouseEvent) => {
+      if (e.button !== 0) return
       if ((e.target as HTMLElement).closest('button')) return
       if (isEditingTitle && (e.target as HTMLElement).tagName === 'INPUT') return
       e.preventDefault()
@@ -398,6 +454,7 @@ export default function NotepadWindow({
 
   const handleMouseDownResize = useCallback(
     (e: React.MouseEvent, direction: ResizeDirection) => {
+      if (e.button !== 0) return
       if (isMaximized) return
       e.preventDefault()
       e.stopPropagation()
@@ -658,6 +715,7 @@ export default function NotepadWindow({
       onMouseDown={(e) => {
         if (isOverview) {
           if ((e.target as HTMLElement).closest('button')) return
+          if (e.button !== 0) return
           e.preventDefault()
           hasDragged.current = false
           actionSnapshotPushedRef.current = false
@@ -808,8 +866,13 @@ export default function NotepadWindow({
               Rename
             </ContextMenuItem>
           )}
+          {note.type === 'link' && !isOverview && (
+            <ContextMenuItem onSelect={() => setIsLinkEditing(true)}>
+              Edit link
+            </ContextMenuItem>
+          )}
           <ContextMenuItem onSelect={() => { onFocus(note.id); onZoomToNote(note.id) }}>
-            Focus
+            Fit to view
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => onDuplicate(note.id)}>
@@ -853,7 +916,7 @@ export default function NotepadWindow({
           {/* Content Area */}
           <div className="relative flex-1 overflow-hidden">
             {note.type === 'link' ? (
-              <LinkContent note={note} onUpdate={onUpdate} />
+              <LinkContent note={note} onUpdate={onUpdate} isEditing={isLinkEditing} onEditingChange={setIsLinkEditing} />
             ) : isOverview ? (
               <div
                 className="pointer-events-none h-full w-full select-none overflow-hidden p-4 font-mono text-sm leading-relaxed text-note-foreground/60"
