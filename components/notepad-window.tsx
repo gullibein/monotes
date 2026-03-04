@@ -114,89 +114,42 @@ function getDomain(url: string): string {
 const LinkContent = memo(function LinkContent({
   note,
   onUpdate,
-  isOverview,
 }: {
-  note: import('@/lib/notes-store').Note
-  onUpdate: (id: string, updates: Partial<import('@/lib/notes-store').Note>) => void
-  isOverview: boolean
+  note: Note
+  onUpdate: (id: string, updates: Partial<Note>) => void
 }) {
   const [draft, setDraft] = useState(note.url ?? '')
-  const [imgLoading, setImgLoading] = useState(!!note.url)
-  const [imgError, setImgError] = useState(false)
 
-  useEffect(() => {
-    setDraft(note.url ?? '')
-    if (note.url) { setImgLoading(true); setImgError(false) }
-  }, [note.url])
+  useEffect(() => { setDraft(note.url ?? '') }, [note.url])
 
   const commit = useCallback(() => {
     let url = draft.trim()
     if (!url) { onUpdate(note.id, { url: '' }); return }
     if (!url.match(/^https?:\/\//)) url = 'https://' + url
-    const updates: Partial<import('@/lib/notes-store').Note> = { url }
-    if (note.title === 'New Link') {
-      try { updates.title = new URL(url).hostname.replace(/^www\./, '') } catch {}
+    onUpdate(note.id, { url })
+    const shouldAutoTitle = note.title === 'New Link'
+    if (shouldAutoTitle) {
+      fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`)
+        .then((r) => r.json())
+        .then((data) => {
+          const title = data?.data?.title
+          onUpdate(note.id, { title: title || getDomain(url) })
+        })
+        .catch(() => { try { onUpdate(note.id, { title: getDomain(url) }) } catch {} })
     }
-    onUpdate(note.id, updates)
-    setImgLoading(true)
-    setImgError(false)
   }, [draft, note.id, note.title, onUpdate])
 
-  const screenshotUrl = note.url
-    ? `https://image.thum.io/get/width/800/crop/600/${note.url}`
-    : null
-  const domain = note.url ? getDomain(note.url) : ''
-
   return (
-    <div className="flex h-full flex-col">
-      {!isOverview && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-note-border px-3 py-2">
-          {domain && (
-            <img
-              src={`https://www.google.com/s2/favicons?domain=${domain}&sz=16`}
-              className="h-4 w-4 shrink-0"
-              alt=""
-            />
-          )}
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commit}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit() } }}
-            onMouseDown={(e) => e.stopPropagation()}
-            placeholder="Paste a link…"
-            className="min-w-0 flex-1 truncate bg-transparent text-xs text-note-foreground/80 outline-none placeholder:text-note-foreground/30"
-          />
-        </div>
-      )}
-      <div className="relative flex-1 overflow-hidden">
-        {screenshotUrl ? (
-          <>
-            <img
-              key={screenshotUrl}
-              src={screenshotUrl}
-              alt=""
-              onLoad={() => setImgLoading(false)}
-              onError={() => { setImgLoading(false); setImgError(true) }}
-              className={`h-full w-full object-cover object-top transition-opacity duration-300 ${imgLoading ? 'opacity-0' : 'opacity-100'}`}
-            />
-            {imgLoading && !imgError && (
-              <div className="absolute inset-0 flex items-center justify-center text-[10px] text-note-foreground/30">
-                Loading preview…
-              </div>
-            )}
-            {imgError && (
-              <div className="absolute inset-0 flex items-center justify-center text-[10px] text-note-foreground/30">
-                Preview unavailable
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="flex h-full items-center justify-center text-[10px] text-note-foreground/20">
-            {isOverview ? (note.url || 'No link') : 'Paste a link above to see a preview'}
-          </div>
-        )}
-      </div>
+    <div className="flex items-center px-3 py-2">
+      <input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit() } }}
+        onMouseDown={(e) => e.stopPropagation()}
+        placeholder="Paste a link…"
+        className="min-w-0 flex-1 truncate bg-transparent text-xs text-note-foreground/70 outline-none placeholder:text-note-foreground/30"
+      />
     </div>
   )
 })
@@ -697,7 +650,7 @@ export default function NotepadWindow({
         left: `${note.x}px`,
         top: `${note.y}px`,
         width: `${note.width}px`,
-        height: isMinimized ? 'auto' : `${note.height}px`,
+        height: note.type === 'link' || isMinimized ? 'auto' : `${note.height}px`,
         zIndex: note.zIndex,
         backgroundColor: note.color,
         filter: isFocusMode && !isFocused ? 'brightness(0.4)' : undefined,
@@ -778,18 +731,30 @@ export default function NotepadWindow({
                 >
                   <Minus size={8} className={`opacity-0 transition-opacity group-hover:opacity-100 ${isFocused ? 'text-yellow-800' : 'text-neutral-500'}`} />
                 </button>
-                <button
-                  type="button"
-                  aria-label="Maximize note"
-                  onMouseDown={() => { wasFocusedRef.current = isFocused }}
-                  onClick={() => { if (!wasFocusedRef.current) return; toggleMaximize() }}
-                  className={`group flex h-3.5 w-3.5 items-center justify-center rounded-full transition-colors ${
-                    isFocused ? 'bg-green-400 hover:bg-green-500' : 'bg-neutral-300 dark:bg-neutral-600'
-                  }`}
-                >
-                  <Maximize2 size={7} className={`opacity-0 transition-opacity group-hover:opacity-100 ${isFocused ? 'text-green-800' : 'text-neutral-500'}`} />
-                </button>
+                {note.type !== 'link' && (
+                  <button
+                    type="button"
+                    aria-label="Maximize note"
+                    onMouseDown={() => { wasFocusedRef.current = isFocused }}
+                    onClick={() => { if (!wasFocusedRef.current) return; toggleMaximize() }}
+                    className={`group flex h-3.5 w-3.5 items-center justify-center rounded-full transition-colors ${
+                      isFocused ? 'bg-green-400 hover:bg-green-500' : 'bg-neutral-300 dark:bg-neutral-600'
+                    }`}
+                  >
+                    <Maximize2 size={7} className={`opacity-0 transition-opacity group-hover:opacity-100 ${isFocused ? 'text-green-800' : 'text-neutral-500'}`} />
+                  </button>
+                )}
               </div>
+            )}
+
+            {/* Favicon — links only */}
+            {note.type === 'link' && !isOverview && note.url && (
+              <img
+                src={`https://www.google.com/s2/favicons?domain=${getDomain(note.url)}&sz=32`}
+                className="h-4 w-4 shrink-0 rounded-sm"
+                alt=""
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+              />
             )}
 
             {isEditingTitle && !isOverview ? (
@@ -823,9 +788,9 @@ export default function NotepadWindow({
                 </button>
               </div>
             ) : (
-              <div className="min-w-0 flex-1 overflow-hidden text-center">
+              <div className={`min-w-0 flex-1 overflow-hidden ${note.type !== 'link' ? 'text-center' : ''}`}>
                 <span
-                  className={`select-none text-xs ${isFocused ? 'font-semibold text-note-foreground' : 'font-medium text-note-foreground/70'}`}
+                  className={`select-none text-xs ${isFocused ? 'font-semibold text-note-foreground' : 'font-medium text-note-foreground/70'} ${note.type === 'link' ? 'block truncate' : ''}`}
                   onDoubleClick={(e) => { if (!isOverview) { e.stopPropagation(); startRename() } }}
                 >
                   {note.title || 'Untitled'}
@@ -833,7 +798,7 @@ export default function NotepadWindow({
               </div>
             )}
 
-            {!isOverview && <div className="w-[52px]" />}
+            {!isOverview && note.type !== 'link' && <div className="w-[52px]" />}
           </div>
         </ContextMenuTrigger>
 
@@ -888,7 +853,7 @@ export default function NotepadWindow({
           {/* Content Area */}
           <div className="relative flex-1 overflow-hidden">
             {note.type === 'link' ? (
-              <LinkContent note={note} onUpdate={onUpdate} isOverview={isOverview} />
+              <LinkContent note={note} onUpdate={onUpdate} />
             ) : isOverview ? (
               <div
                 className="pointer-events-none h-full w-full select-none overflow-hidden p-4 font-mono text-sm leading-relaxed text-note-foreground/60"
@@ -945,32 +910,36 @@ export default function NotepadWindow({
           eliminating the grab-cursor gap at the shared edge. */}
       {!isMaximized && !isOverview && !isMinimized && (
         <>
-          {/* Edges */}
-          <div className="absolute left-3 right-3 h-1 cursor-ns-resize"
-            style={{ top: '-1px', zIndex: 30 }}
-            onMouseDown={(e) => handleMouseDownResize(e, 'n')} />
-          <div className="absolute left-3 right-3 h-1 cursor-ns-resize"
-            style={{ bottom: '-1px', zIndex: 30 }}
-            onMouseDown={(e) => handleMouseDownResize(e, 's')} />
+          {/* N/S edges and corners — notes only */}
+          {note.type !== 'link' && (
+            <>
+              <div className="absolute left-3 right-3 h-1 cursor-ns-resize"
+                style={{ top: '-1px', zIndex: 30 }}
+                onMouseDown={(e) => handleMouseDownResize(e, 'n')} />
+              <div className="absolute left-3 right-3 h-1 cursor-ns-resize"
+                style={{ bottom: '-1px', zIndex: 30 }}
+                onMouseDown={(e) => handleMouseDownResize(e, 's')} />
+              <div className="absolute h-3 w-3 cursor-nwse-resize"
+                style={{ top: '-1px', left: '-1px', zIndex: 40 }}
+                onMouseDown={(e) => handleMouseDownResize(e, 'nw')} />
+              <div className="absolute h-3 w-3 cursor-nesw-resize"
+                style={{ top: '-1px', right: '-1px', zIndex: 40 }}
+                onMouseDown={(e) => handleMouseDownResize(e, 'ne')} />
+              <div className="absolute h-3 w-3 cursor-nesw-resize"
+                style={{ bottom: '-1px', left: '-1px', zIndex: 40 }}
+                onMouseDown={(e) => handleMouseDownResize(e, 'sw')} />
+              <div className="absolute h-3 w-3 cursor-nwse-resize"
+                style={{ bottom: '-1px', right: '-1px', zIndex: 40 }}
+                onMouseDown={(e) => handleMouseDownResize(e, 'se')} />
+            </>
+          )}
+          {/* E/W edges — all types */}
           <div className="absolute top-3 bottom-3 w-1 cursor-ew-resize"
             style={{ left: '-1px', zIndex: 30 }}
             onMouseDown={(e) => handleMouseDownResize(e, 'w')} />
           <div className="absolute top-3 bottom-3 w-1 cursor-ew-resize"
             style={{ right: '-1px', zIndex: 30 }}
             onMouseDown={(e) => handleMouseDownResize(e, 'e')} />
-          {/* Corners */}
-          <div className="absolute h-3 w-3 cursor-nwse-resize"
-            style={{ top: '-1px', left: '-1px', zIndex: 40 }}
-            onMouseDown={(e) => handleMouseDownResize(e, 'nw')} />
-          <div className="absolute h-3 w-3 cursor-nesw-resize"
-            style={{ top: '-1px', right: '-1px', zIndex: 40 }}
-            onMouseDown={(e) => handleMouseDownResize(e, 'ne')} />
-          <div className="absolute h-3 w-3 cursor-nesw-resize"
-            style={{ bottom: '-1px', left: '-1px', zIndex: 40 }}
-            onMouseDown={(e) => handleMouseDownResize(e, 'sw')} />
-          <div className="absolute h-3 w-3 cursor-nwse-resize"
-            style={{ bottom: '-1px', right: '-1px', zIndex: 40 }}
-            onMouseDown={(e) => handleMouseDownResize(e, 'se')} />
         </>
       )}
     </div>
