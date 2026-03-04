@@ -129,7 +129,7 @@ const LinkContent = memo(function LinkContent({
     onUpdate(note.id, { url })
     const shouldAutoTitle = note.title === 'New Link'
     if (shouldAutoTitle) {
-      fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`)
+      fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}&prerender=auto`)
         .then((r) => r.json())
         .then((data) => {
           const title = data?.data?.title
