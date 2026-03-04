@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef, useState, useEffect } from 'react'
+import { useCallback, useRef, useState, useEffect, memo } from 'react'
 import { createPortal } from 'react-dom'
 import ConfirmDialog from '@/components/confirm-dialog'
 import {
@@ -106,6 +106,100 @@ import {
 } from '@/components/ui/context-menu'
 
 const OVERVIEW_THRESHOLD_PCT = 50
+
+function getDomain(url: string): string {
+  try { return new URL(url).hostname } catch { return '' }
+}
+
+const LinkContent = memo(function LinkContent({
+  note,
+  onUpdate,
+  isOverview,
+}: {
+  note: import('@/lib/notes-store').Note
+  onUpdate: (id: string, updates: Partial<import('@/lib/notes-store').Note>) => void
+  isOverview: boolean
+}) {
+  const [draft, setDraft] = useState(note.url ?? '')
+  const [imgLoading, setImgLoading] = useState(!!note.url)
+  const [imgError, setImgError] = useState(false)
+
+  useEffect(() => {
+    setDraft(note.url ?? '')
+    if (note.url) { setImgLoading(true); setImgError(false) }
+  }, [note.url])
+
+  const commit = useCallback(() => {
+    let url = draft.trim()
+    if (!url) { onUpdate(note.id, { url: '' }); return }
+    if (!url.match(/^https?:\/\//)) url = 'https://' + url
+    const updates: Partial<import('@/lib/notes-store').Note> = { url }
+    if (note.title === 'New Link') {
+      try { updates.title = new URL(url).hostname.replace(/^www\./, '') } catch {}
+    }
+    onUpdate(note.id, updates)
+    setImgLoading(true)
+    setImgError(false)
+  }, [draft, note.id, note.title, onUpdate])
+
+  const screenshotUrl = note.url
+    ? `https://image.thum.io/get/width/800/crop/600/${note.url}`
+    : null
+  const domain = note.url ? getDomain(note.url) : ''
+
+  return (
+    <div className="flex h-full flex-col">
+      {!isOverview && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-note-border px-3 py-2">
+          {domain && (
+            <img
+              src={`https://www.google.com/s2/favicons?domain=${domain}&sz=16`}
+              className="h-4 w-4 shrink-0"
+              alt=""
+            />
+          )}
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit() } }}
+            onMouseDown={(e) => e.stopPropagation()}
+            placeholder="Paste a link…"
+            className="min-w-0 flex-1 truncate bg-transparent text-xs text-note-foreground/80 outline-none placeholder:text-note-foreground/30"
+          />
+        </div>
+      )}
+      <div className="relative flex-1 overflow-hidden">
+        {screenshotUrl ? (
+          <>
+            <img
+              key={screenshotUrl}
+              src={screenshotUrl}
+              alt=""
+              onLoad={() => setImgLoading(false)}
+              onError={() => { setImgLoading(false); setImgError(true) }}
+              className={`h-full w-full object-cover object-top transition-opacity duration-300 ${imgLoading ? 'opacity-0' : 'opacity-100'}`}
+            />
+            {imgLoading && !imgError && (
+              <div className="absolute inset-0 flex items-center justify-center text-[10px] text-note-foreground/30">
+                Loading preview…
+              </div>
+            )}
+            {imgError && (
+              <div className="absolute inset-0 flex items-center justify-center text-[10px] text-note-foreground/30">
+                Preview unavailable
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="flex h-full items-center justify-center text-[10px] text-note-foreground/20">
+            {isOverview ? (note.url || 'No link') : 'Paste a link above to see a preview'}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+})
 
 interface NotepadWindowProps {
   note: Note
@@ -287,10 +381,12 @@ export default function NotepadWindow({
   }, [undoRevision])
 
   const handleClose = useCallback(() => {
-    const text = note.content?.replace(/<[^>]*>/g, '').trim() ?? ''
-    if (text.length > 0) { setShowCloseConfirm(true); return }
+    const hasContent = note.type === 'link'
+      ? !!note.url
+      : (note.content?.replace(/<[^>]*>/g, '').trim() ?? '').length > 0
+    if (hasContent) { setShowCloseConfirm(true); return }
     onClose(note.id)
-  }, [note.id, note.content, onClose])
+  }, [note.id, note.content, note.type, note.url, onClose])
 
   const startRename = useCallback(() => {
     inputHadFocusRef.current = false
@@ -768,8 +864,8 @@ export default function NotepadWindow({
       {/* Body — hidden when minimized */}
       {!isMinimized && (
         <>
-          {/* Formatting Toolbar — hidden in overview mode */}
-          {!isOverview && (
+          {/* Formatting Toolbar — notes only, hidden in overview mode */}
+          {note.type !== 'link' && !isOverview && (
             <div className="flex shrink-0 items-center gap-1 border-b border-note-border bg-note-toolbar px-3 py-1.5">
               <ToolbarButton active={isBold} onClick={() => execFormat('bold')} icon={Bold} label="Bold" />
               <ToolbarButton active={isItalic} onClick={() => execFormat('italic')} icon={Italic} label="Italic" />
@@ -791,7 +887,9 @@ export default function NotepadWindow({
 
           {/* Content Area */}
           <div className="relative flex-1 overflow-hidden">
-            {isOverview ? (
+            {note.type === 'link' ? (
+              <LinkContent note={note} onUpdate={onUpdate} isOverview={isOverview} />
+            ) : isOverview ? (
               <div
                 className="pointer-events-none h-full w-full select-none overflow-hidden p-4 font-mono text-sm leading-relaxed text-note-foreground/60"
                 dangerouslySetInnerHTML={{
@@ -811,8 +909,8 @@ export default function NotepadWindow({
             )}
           </div>
 
-          {/* Status Bar — hidden in overview mode */}
-          {!isOverview && (
+          {/* Status Bar — notes only, hidden in overview mode */}
+          {note.type !== 'link' && !isOverview && (
             <div className="flex shrink-0 items-center justify-between border-t border-note-border bg-note-toolbar/60 px-3 py-1">
               <span className="text-[10px] text-note-foreground/35">
                 {wordCount} {wordCount === 1 ? 'word' : 'words'} &middot;{' '}

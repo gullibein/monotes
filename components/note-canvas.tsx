@@ -5,7 +5,7 @@ import NotepadWindow from '@/components/notepad-window'
 import CanvasControls from '@/components/canvas-controls'
 import ConfirmDialog from '@/components/confirm-dialog'
 import { supabase } from '@/lib/supabase'
-import { type Note, type Workspace, createNote, createNoteAt, getNextZIndex, initZIndexCounter } from '@/lib/notes-store'
+import { type Note, type Workspace, createNote, createNoteAt, createLink, createLinkAt, getNextZIndex, initZIndexCounter } from '@/lib/notes-store'
 import { encryptText, decryptText } from '@/lib/crypto'
 import {
   ContextMenu,
@@ -195,12 +195,33 @@ export default function NoteCanvas({
     setFocusedNoteId(newNote.id)
   }, [setNotes, notes.length, pushUndoSnapshot])
 
+  const addLink = useCallback(() => {
+    pushUndoSnapshot()
+    const newNote = createLink(notes.length)
+    setNotes((prev) => [...prev, newNote])
+    setLatestNoteId(newNote.id)
+    setFocusedNoteId(newNote.id)
+  }, [setNotes, notes.length, pushUndoSnapshot])
+
   const addNoteAt = useCallback(
     (clientX: number, clientY: number) => {
       pushUndoSnapshot()
       const canvasX = (clientX - offset.x) / scale
       const canvasY = (clientY - offset.y) / scale
       const newNote = createNoteAt(canvasX, canvasY, notes.length)
+      setNotes((prev) => [...prev, newNote])
+      setLatestNoteId(newNote.id)
+      setFocusedNoteId(newNote.id)
+    },
+    [offset, scale, setNotes, notes.length, pushUndoSnapshot]
+  )
+
+  const addLinkAt = useCallback(
+    (clientX: number, clientY: number) => {
+      pushUndoSnapshot()
+      const canvasX = (clientX - offset.x) / scale
+      const canvasY = (clientY - offset.y) / scale
+      const newNote = createLinkAt(canvasX, canvasY, notes.length)
       setNotes((prev) => [...prev, newNote])
       setLatestNoteId(newNote.id)
       setFocusedNoteId(newNote.id)
@@ -717,6 +738,9 @@ export default function NoteCanvas({
           <ContextMenuItem onSelect={() => addNoteAt(contextMenuPosRef.current.x, contextMenuPosRef.current.y)}>
             New note
           </ContextMenuItem>
+          <ContextMenuItem onSelect={() => addLinkAt(contextMenuPosRef.current.x, contextMenuPosRef.current.y)}>
+            New link
+          </ContextMenuItem>
           <ContextMenuItem onSelect={pasteNote} disabled={!copiedNote}>
             Paste note
           </ContextMenuItem>
@@ -743,6 +767,7 @@ export default function NoteCanvas({
         onZoomFit={zoomFit}
         onZoomToCenter={zoomToCenter}
         onAddNote={addNote}
+        onAddLink={addLink}
         noteCount={notes.length}
         workspaces={workspaces}
         activeWorkspaceId={activeWorkspaceId}

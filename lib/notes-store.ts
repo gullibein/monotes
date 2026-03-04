@@ -25,6 +25,8 @@ export interface Note {
   zIndex: number
   createdAt: number
   color: string
+  type?: 'note' | 'link'
+  url?: string
 }
 
 let nextZIndex = 1
@@ -72,4 +74,27 @@ export function createNoteAt(x: number, y: number, existingCount: number): Note 
     createdAt: Date.now(),
     color: NOTE_COLORS[0].value,
   }
+}
+
+export function createLink(existingCount: number): Note {
+  const offsetX = (existingCount % 10) * CASCADE_OFFSET_X
+  const offsetY = (existingCount % 10) * CASCADE_OFFSET_Y
+  return {
+    id: crypto.randomUUID(),
+    title: 'New Link',
+    content: '',
+    x: 80 + offsetX,
+    y: 80 + offsetY,
+    width: 320,
+    height: 260,
+    zIndex: getNextZIndex(),
+    createdAt: Date.now(),
+    color: NOTE_COLORS[0].value,
+    type: 'link',
+    url: '',
+  }
+}
+
+export function createLinkAt(x: number, y: number, existingCount: number): Note {
+  return { ...createLink(existingCount), x: x - 160, y: y - 20 }
 }

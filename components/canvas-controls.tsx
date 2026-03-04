@@ -17,6 +17,7 @@ interface CanvasControlsProps {
   onZoomFit: () => void
   onZoomToCenter: () => void
   onAddNote: () => void
+  onAddLink: () => void
   noteCount: number
   workspaces: Workspace[]
   activeWorkspaceId: string
@@ -149,6 +150,7 @@ export default function CanvasControls({
   onZoomFit,
   onZoomToCenter,
   onAddNote,
+  onAddLink,
   noteCount,
   workspaces,
   activeWorkspaceId,
@@ -217,14 +219,22 @@ export default function CanvasControls({
               <Crosshair size={13} />
               <span>Focus</span>
             </button>
-            <button
-              type="button"
-              onClick={onAddNote}
-              className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-all hover:brightness-110 active:scale-[0.97]"
-            >
-              <Plus size={13} />
-              <span>New Note</span>
-            </button>
+            <ContextMenu>
+              <ContextMenuTrigger asChild>
+                <button
+                  type="button"
+                  onClick={onAddNote}
+                  className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-all hover:brightness-110 active:scale-[0.97]"
+                >
+                  <Plus size={13} />
+                  <span>New Note</span>
+                </button>
+              </ContextMenuTrigger>
+              <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
+                <ContextMenuItem onSelect={onAddNote}>New note</ContextMenuItem>
+                <ContextMenuItem onSelect={onAddLink}>New link</ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
             <button
               type="button"
               onClick={() => setShowHelp(true)}
