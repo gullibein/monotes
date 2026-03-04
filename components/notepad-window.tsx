@@ -388,6 +388,15 @@ export default function NotepadWindow({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [undoRevision])
 
+  // Link windows use height:auto so note.height (stored) may differ from the
+  // actual rendered height. Sync once on mount so snap calculations are accurate.
+  useEffect(() => {
+    if (note.type !== 'link' || !windowRef.current) return
+    const actualH = windowRef.current.offsetHeight
+    if (Math.abs(actualH - note.height) > 1) onUpdate(note.id, { height: actualH })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const handleClose = useCallback(() => {
     const hasContent = note.type === 'link'
       ? !!note.url
